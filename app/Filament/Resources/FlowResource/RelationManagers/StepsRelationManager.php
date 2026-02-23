@@ -52,8 +52,8 @@ class StepsRelationManager extends RelationManager
     protected static function getExamplePrompts(): array
     {
         return [
-            'customer_service' => 'אני רוצה שתהיה איש שירות לקוחות ובצורה נעימה ומנומסת תשאל את השם של הלקוח ולאחר מכן מה המייל או הטלפון. לאחר מכן תשאל את הלקוח במה תרצה לעזור ובהתאם לתשובה תפנה אותו לשבל המנוי או ביטול מנוי או עדכון ההזמנה. במידה ואין משהו מתאים תעדכן את הלקוח שאנחנו בדקות הקרובות נציג יפנה אליו.',
-            'order_lookup' => 'אני מעוניין שתקח מהערכים הגלובליים את המייל של הלקוח ותשלח את זה בפניה POST ל-endpoint XXXX. הוא יחזיר לך את רשימת ההזמנות. לאחר שתקבל את כל ההזמנות תשאל את הלקוח מה ההזמנה שהוא רוצה לבטל.',
+            'customer_service' => 'Act as a friendly customer service agent. Politely ask for the customer\'s name, then their email or phone. Then ask how you can help and, based on their answer, direct them to subscription management, cancellation, or order update. If nothing fits, tell them a representative will contact them shortly.',
+            'order_lookup' => 'Take the customer email from global context and send a POST request to endpoint XXXX. It will return the list of orders. After receiving the orders, ask the customer which order they want to cancel.',
         ];
     }
 
@@ -63,9 +63,10 @@ class StepsRelationManager extends RelationManager
         if (! isset($prompts[$key])) {
             return;
         }
-        $state = $this->form->getState();
+        $form = $this->form();
+        $state = $form->getState();
         $state['ai_step_description'] = $prompts[$key];
-        $this->form->fill($state);
+        $form->fill($state);
     }
 
     public function form(?Form $form = null): Form
@@ -98,9 +99,9 @@ class StepsRelationManager extends RelationManager
                             ->label('')
                             ->content(new HtmlString(
                                 '<div class="flex flex-wrap gap-2 mt-2">'.
-                                '<span class="text-sm text-gray-500 dark:text-gray-400">דוגמאות:</span>'.
-                                '<button type="button" wire:click="fillExamplePrompt(\'customer_service\')" class="inline-flex items-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600">דוגמא: שירות לקוחות</button>'.
-                                '<button type="button" wire:click="fillExamplePrompt(\'order_lookup\')" class="inline-flex items-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600">דוגמא: שליפת הזמנות וביטול</button>'.
+                                '<span class="text-sm text-gray-500 dark:text-gray-400">Examples:</span>'.
+                                '<button type="button" wire:click="fillExamplePrompt(\'customer_service\')" class="inline-flex items-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600">Example: Customer service</button>'.
+                                '<button type="button" wire:click="fillExamplePrompt(\'order_lookup\')" class="inline-flex items-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600">Example: Order lookup and cancel</button>'.
                                 '</div>'
                             )),
                     ])
