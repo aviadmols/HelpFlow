@@ -46,8 +46,31 @@ class StepsRelationManager extends RelationManager
         return parent::getInfolist($name);
     }
 
-    public function form(Form $form): Form
+    /**
+     * @return array<string, string>
+     */
+    protected static function getExamplePrompts(): array
     {
+        return [
+            'customer_service' => 'אני רוצה שתהיה איש שירות לקוחות ובצורה נעימה ומנומסת תשאל את השם של הלקוח ולאחר מכן מה המייל או הטלפון. לאחר מכן תשאל את הלקוח במה תרצה לעזור ובהתאם לתשובה תפנה אותו לשבל המנוי או ביטול מנוי או עדכון ההזמנה. במידה ואין משהו מתאים תעדכן את הלקוח שאנחנו בדקות הקרובות נציג יפנה אליו.',
+            'order_lookup' => 'אני מעוניין שתקח מהערכים הגלובליים את המייל של הלקוח ותשלח את זה בפניה POST ל-endpoint XXXX. הוא יחזיר לך את רשימת ההזמנות. לאחר שתקבל את כל ההזמנות תשאל את הלקוח מה ההזמנה שהוא רוצה לבטל.',
+        ];
+    }
+
+    public function fillExamplePrompt(string $key): void
+    {
+        $prompts = static::getExamplePrompts();
+        if (! isset($prompts[$key])) {
+            return;
+        }
+        $state = $this->form->getState();
+        $state['ai_step_description'] = $prompts[$key];
+        $this->form->fill($state);
+    }
+
+    public function form(?Form $form = null): Form
+    {
+        $form ??= $this->makeForm();
         $flow = $this->getOwnerRecord();
         $stepOptions = $flow->steps()->pluck('key', 'id')->all();
         $stepKeyOptions = $flow->steps()->pluck('key', 'key')->all();
@@ -70,6 +93,15 @@ class StepsRelationManager extends RelationManager
                             ->label('')
                             ->content(new HtmlString(
                                 '<button type="button" wire:click="generateStepWithAi" class="inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600">Generate step</button>'
+                            )),
+                        Placeholder::make('example_prompts_btns')
+                            ->label('')
+                            ->content(new HtmlString(
+                                '<div class="flex flex-wrap gap-2 mt-2">'.
+                                '<span class="text-sm text-gray-500 dark:text-gray-400">דוגמאות:</span>'.
+                                '<button type="button" wire:click="fillExamplePrompt(\'customer_service\')" class="inline-flex items-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600">דוגמא: שירות לקוחות</button>'.
+                                '<button type="button" wire:click="fillExamplePrompt(\'order_lookup\')" class="inline-flex items-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600">דוגמא: שליפת הזמנות וביטול</button>'.
+                                '</div>'
                             )),
                     ])
                     ->collapsible()
