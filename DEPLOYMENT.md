@@ -64,7 +64,9 @@ The repo includes a **Dockerfile** that runs `composer install` with `--ignore-p
 ## Environment (.env)
 
 - Set `APP_ENV=production`, `APP_DEBUG=false`, and a strong `APP_KEY`.
-- **Database**: Use PostgreSQL in production. Set `DB_CONNECTION=pgsql` and credentials.
+- **Database**: Use PostgreSQL in production.
+  - **Railway**: If you add a PostgreSQL service, Railway sets `DATABASE_URL`. The app will use PostgreSQL automatically (no need to set `DB_CONNECTION`).
+  - **Elsewhere**: Set `DB_CONNECTION=pgsql` and `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (or `DATABASE_URL`).
 - **Queue**: Set `QUEUE_CONNECTION=redis` and Redis connection vars.
 - **OpenRouter**: Set `OPENROUTER_API_KEY` for AI routing.
 - **HelpFlow**: Optionally set `CHAT_CACHE_TTL`, `CHAT_DEFAULT_FLOW_KEY`, `CHAT_FALLBACK_BLOCK_KEY`.
