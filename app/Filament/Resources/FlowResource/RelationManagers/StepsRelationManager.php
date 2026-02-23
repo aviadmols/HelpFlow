@@ -37,12 +37,17 @@ class StepsRelationManager extends RelationManager
         return 'Steps';
     }
 
-    public function form(Form|Infolist $form): Form|Infolist
+    public function getInfolist(string $name): ?Infolist
     {
-        if ($form instanceof Infolist) {
-            return $this->infolist($form);
+        if ($name === 'form') {
+            return null;
         }
 
+        return parent::getInfolist($name);
+    }
+
+    public function form(Form $form): Form
+    {
         $flow = $this->getOwnerRecord();
         $stepOptions = $flow->steps()->pluck('key', 'id')->all();
         $stepKeyOptions = $flow->steps()->pluck('key', 'key')->all();
