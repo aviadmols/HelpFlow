@@ -110,6 +110,101 @@ final class ActionRunner
     }
 
     /**
+     * Run an endpoint for a step (e.g. order lookup after collecting email/order). No option; payload from context + customer.
+     * Returns action_run, success, and mapped variables to merge into conversation context.
+     *
+     * @return array{action_run: ActionRun, success: bool, mapped_variables: array<string, mixed>}
+     */
+    public function runForStep(Conversation $conversation, Endpoint $endpoint, ?int $messageId = null): array
+    {
+        $run = ActionRun::create([
+            'conversation_id' => $conversation->id,
+            'message_id' => $messageId,
+            'block_option_id' => null,
+            'endpoint_id' => $endpoint->id,
+            'status' => ChatConstants::RUN_STATUS_RUNNING,
+        ]);
+
+        $start = microtime(true);
+        $payload = $this->buildPayloadFromContext($conversation, $endpoint);
+        $redactedRequest = $this->redact($payload);
+
+        try {
+            $headers = $endpoint->getDecryptedHeaders();
+            $authConfig = $endpoint->getDecryptedAuthConfig();
+            if (! empty($authConfig['bearer_token'] ?? null)) {
+                $headers['Authorization'] = 'Bearer '.$authConfig['bearer_token'];
+            }
+            $request = Http::withHeaders($headers)->timeout($endpoint->timeout_sec);
+            $method = strtoupper($endpoint->method);
+            $response = in_array($method, ['GET', 'HEAD'], true)
+                ? $request->send($method, $endpoint->url)
+                : $request->withBody(json_encode($payload), 'application/json')->send($method, $endpoint->url);
+
+            $durationMs = (int) round((microtime(true) - $start) * 1000);
+            $body = $response->json();
+            $bodyArray = is_array($body) ? $body : [];
+            $redactedResponse = $this->redact($bodyArray);
+
+            $run->update([
+                'status' => $response->successful() ? ChatConstants::RUN_STATUS_SUCCESS : ChatConstants::RUN_STATUS_FAILED,
+                'request_redacted' => json_encode($redactedRequest),
+                'response_redacted' => json_encode($redactedResponse),
+                'http_code' => $response->status(),
+                'duration_ms' => $durationMs,
+                'error_message' => $response->successful() ? null : ($bodyArray['message'] ?? $response->body()),
+            ]);
+
+            Log::channel('actions')->info('Step endpoint run completed', ['action_run_id' => $run->id, 'status' => $run->status]);
+
+            $mappedVariables = $response->successful()
+                ? $this->responseMapper->map($endpoint->response_mapper ?? [], $bodyArray)
+                : [];
+
+            return ['action_run' => $run, 'success' => $response->successful(), 'mapped_variables' => $mappedVariables];
+        } catch (\Throwable $e) {
+            $durationMs = (int) round((microtime(true) - $start) * 1000);
+            $run->update([
+                'status' => ChatConstants::RUN_STATUS_FAILED,
+                'request_redacted' => json_encode($redactedRequest),
+                'response_redacted' => null,
+                'http_code' => null,
+                'duration_ms' => $durationMs,
+                'error_message' => $e->getMessage(),
+            ]);
+            Log::channel('actions')->error('Step endpoint run failed', ['action_run_id' => $run->id, 'error' => $e->getMessage()]);
+
+            return ['action_run' => $run, 'success' => false, 'mapped_variables' => []];
+        }
+    }
+
+    /**
+     * Build request payload from endpoint request_mapper and conversation context + customer only (no option).
+     *
+     * @return array<string, mixed>
+     */
+    private function buildPayloadFromContext(Conversation $conversation, Endpoint $endpoint): array
+    {
+        $mapper = $endpoint->request_mapper ?? [];
+        $context = $conversation->getContextArray();
+        $customer = $conversation->customer;
+        $payload = [];
+        foreach ($mapper as $key => $source) {
+            if (is_string($source)) {
+                if (str_starts_with($source, 'context.')) {
+                    $payload[$key] = $context[substr($source, 8)] ?? null;
+                } elseif (str_starts_with($source, 'customer.')) {
+                    $payload[$key] = $customer?->getAttribute(substr($source, 9));
+                } else {
+                    $payload[$key] = $context[$source] ?? $source;
+                }
+            }
+        }
+
+        return $payload ?: ['context' => $context, 'customer_id' => $customer?->id];
+    }
+
+    /**
      * Build request payload from endpoint request_mapper and conversation context, customer, option.
      *
      * @return array<string, mixed>

@@ -23,4 +23,15 @@ return [
     */
     'fallback_block_key' => env('CHAT_FALLBACK_BLOCK_KEY', 'main_menu'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Default AI router prompts (used when flow/step have none)
+    |--------------------------------------------------------------------------
+    | customer_message must be one short bot reply, never repeat or paraphrase the user.
+    */
+    'default_system_prompt' => 'You are a support chat router. Output only valid JSON. Do not repeat or paraphrase the user.',
+    'default_router_prompt' => 'Given the user message, respond with JSON: intent, target_block_key, target_step_key, confidence (0-1), reason, customer_message, require_confirmation, variables (object). '
+        . 'customer_message must be ONE short bot reply (e.g. "Here are your options." or "How would you like to proceed?") and must NOT repeat or paraphrase what the user said.',
+    'default_fallback_customer_message' => 'Here are your options.',
+
 ];

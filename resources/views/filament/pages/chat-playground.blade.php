@@ -52,6 +52,9 @@
                     const data = await res.json();
                     if (!res.ok) throw new Error(data.error || res.statusText);
                     (data.messages || []).forEach(m => this.messages.push({ role: m.role || 'assistant', content: m.content || '' }));
+                    if ((!data.messages || data.messages.length === 0) && data.block && data.block.bot_message) {
+                        this.messages.push({ role: 'assistant', content: data.block.bot_message });
+                    }
                     this.currentBlock = data.block || this.currentBlock;
                 } catch (e) {
                     this.error = e.message || 'Failed to send message';

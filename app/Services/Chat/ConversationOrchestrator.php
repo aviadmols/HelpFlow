@@ -20,7 +20,8 @@ final class ConversationOrchestrator
     public function __construct(
         private readonly BlockPresenter $blockPresenter,
         private readonly AIRouter $router,
-        private readonly TemplateRenderer $renderer
+        private readonly TemplateRenderer $renderer,
+        private readonly ActionRunner $actionRunner
     ) {}
 
     /**
@@ -61,6 +62,25 @@ final class ConversationOrchestrator
         $this->applyRouterResultToConversation($conversation, $result);
         $conversation->save();
 
+        // Optional: after collect step, call order lookup endpoint and merge response into context.
+        $step = $conversation->fresh()->currentStep;
+        if ($step && $step->order_lookup_endpoint_id) {
+            $endpoint = $step->orderLookupEndpoint;
+            if ($endpoint) {
+                $ctx = $conversation->getContextArray();
+                if (isset($ctx['email']) || isset($ctx['order_number'])) {
+                    $runResult = $this->actionRunner->runForStep($conversation, $endpoint, $customerMessage->id);
+                    if (! empty($runResult['mapped_variables'])) {
+                        foreach ($runResult['mapped_variables'] as $k => $v) {
+                            $ctx[$k] = $v;
+                        }
+                        $conversation->setContextArray($ctx);
+                        $conversation->save();
+                    }
+                }
+            }
+        }
+
         $block = $this->blockPresenter->findBlockByKey($conversation->tenant_id, $result->targetBlockKey);
         $step = $conversation->currentStep;
         if ($block && $step && is_array($step->allowed_block_ids) && $step->allowed_block_ids !== [] && ! in_array($block->id, $step->allowed_block_ids, true)) {
@@ -70,7 +90,8 @@ final class ConversationOrchestrator
             $block = $this->blockPresenter->resolveBlockForConversation($conversation);
         }
         if ($block) {
-            $botContent = $result->customerMessage;
+            // One bot bubble = block message (no repetition of user); use block message_template, not AI customer_message.
+            $botContent = $this->renderer->render($block->message_template ?? $block->title ?? 'Here are your options.', $conversation->getContextArray());
             Message::create([
                 'conversation_id' => $conversation->id,
                 'role' => ChatConstants::MESSAGE_ROLE_BOT,
@@ -134,10 +155,19 @@ final class ConversationOrchestrator
         ]);
 
         if ($option->action_type === ChatConstants::ACTION_TYPE_API_CALL) {
+            if ($option->bot_reply !== null && $option->bot_reply !== '') {
+                $botContent = $this->renderer->render($option->bot_reply, $conversation->getContextArray());
+                Message::create([
+                    'conversation_id' => $conversation->id,
+                    'role' => ChatConstants::MESSAGE_ROLE_BOT,
+                    'content' => $botContent,
+                    'message_type' => ChatConstants::MESSAGE_TYPE_TEXT,
+                ]);
+            }
             $messageId = $conversation->messages()->latest('id')->first()?->id;
             RunApiActionJob::dispatch($conversation->id, $option->id, $messageId);
             $presented = $this->blockPresenter->present($conversation);
-            $messages = $this->formatMessagesForResponse($conversation, 1);
+            $messages = $this->formatMessagesForResponse($conversation, 2);
 
             return [
                 'messages' => $messages,
@@ -152,7 +182,9 @@ final class ConversationOrchestrator
                 'conversation_id' => $conversation->id,
                 'status' => ChatConstants::TICKET_STATUS_OPEN,
             ]);
-            $botContent = 'A support agent will be with you shortly. Thank you for your patience.';
+            $botContent = $option->bot_reply !== null && $option->bot_reply !== ''
+                ? $this->renderer->render($option->bot_reply, $conversation->getContextArray())
+                : 'A support agent will be with you shortly. Thank you for your patience.';
             Message::create([
                 'conversation_id' => $conversation->id,
                 'role' => ChatConstants::MESSAGE_ROLE_BOT,
@@ -180,8 +212,12 @@ final class ConversationOrchestrator
             }
             $block = $this->blockPresenter->resolveBlockForConversation($conversation);
             $step = $conversation->fresh()->currentStep;
-            $template = $step?->bot_message_template ?? $block->message_template ?? $block->title ?? 'What would you like to do?';
-            $botMessage = $this->renderer->render($template, $conversation->getContextArray());
+            if ($option->bot_reply !== null && $option->bot_reply !== '') {
+                $botMessage = $this->renderer->render($option->bot_reply, $conversation->getContextArray());
+            } else {
+                $template = $step?->bot_message_template ?? $block->message_template ?? $block->title ?? 'What would you like to do?';
+                $botMessage = $this->renderer->render($template, $conversation->getContextArray());
+            }
             Message::create([
                 'conversation_id' => $conversation->id,
                 'role' => ChatConstants::MESSAGE_ROLE_BOT,

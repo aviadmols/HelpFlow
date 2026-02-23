@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class BlockOption extends Model
 {
     protected $fillable = [
-        'block_id', 'label', 'action_type', 'endpoint_id',
+        'block_id', 'label', 'bot_reply', 'action_type', 'endpoint_id',
         'payload_mapper', 'success_template', 'failure_template',
         'next_step_id', 'next_step_on_failure_id', 'confirm_step_id',
         'prompt_template', 'retry_policy', 'sort_order',

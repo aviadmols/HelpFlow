@@ -32,8 +32,8 @@ final class AIRouter
         $flow = $conversation->flow;
         $step = $conversation->currentStep;
 
-        $systemPrompt = $step?->system_prompt ?? $flow->system_prompt ?? 'You are a support chat router. Output only valid JSON.';
-        $routerPrompt = $step?->router_prompt ?? $flow->router_prompt ?? 'Given the user message, respond with JSON: intent, target_block_key, target_step_key, confidence (0-1), reason, customer_message (short English), require_confirmation, variables (object).';
+        $systemPrompt = $step?->system_prompt ?? $flow->system_prompt ?? config('chat.default_system_prompt', 'You are a support chat router. Output only valid JSON.');
+        $routerPrompt = $step?->router_prompt ?? $flow->router_prompt ?? config('chat.default_router_prompt', 'Given the user message, respond with JSON: intent, target_block_key, target_step_key, confidence (0-1), reason, customer_message, require_confirmation, variables (object). customer_message must NOT repeat the user.');
 
         $allowedBlockKeys = [];
         if ($step && ! empty($step->allowed_block_ids)) {
@@ -86,7 +86,7 @@ final class AIRouter
             targetStepKey: null,
             confidence: 0.0,
             reason: ChatConstants::ROUTER_FALLBACK_REASON,
-            customerMessage: 'How can I help you?',
+            customerMessage: config('chat.default_fallback_customer_message', 'Here are your options.'),
             requireConfirmation: false,
             variables: []
         );
@@ -117,7 +117,7 @@ final class AIRouter
             targetStepKey: is_string($decoded['target_step_key'] ?? null) ? $decoded['target_step_key'] : null,
             confidence: $confidence,
             reason: is_string($decoded['reason'] ?? null) ? $decoded['reason'] : ChatConstants::ROUTER_FALLBACK_REASON,
-            customerMessage: is_string($decoded['customer_message'] ?? null) ? $decoded['customer_message'] : 'How can I help you?',
+            customerMessage: is_string($decoded['customer_message'] ?? null) && $decoded['customer_message'] !== '' ? $decoded['customer_message'] : config('chat.default_fallback_customer_message', 'Here are your options.'),
             requireConfirmation: (bool) ($decoded['require_confirmation'] ?? false),
             variables: is_array($decoded['variables'] ?? null) ? $decoded['variables'] : []
         );

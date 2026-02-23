@@ -19,7 +19,7 @@ class Step extends Model
     protected $fillable = [
         'flow_id', 'key', 'bot_message_template',
         'router_prompt', 'system_prompt',
-        'allowed_block_ids', 'transition_rules', 'fallback_block_id', 'ai_model_override',
+        'allowed_block_ids', 'transition_rules', 'fallback_block_id', 'order_lookup_endpoint_id', 'ai_model_override',
     ];
 
     protected function casts(): array
@@ -40,6 +40,12 @@ class Step extends Model
     public function fallbackBlock(): BelongsTo
     {
         return $this->belongsTo(Block::class, 'fallback_block_id');
+    }
+
+    /** Optional endpoint to call after collecting email/order (e.g. fetch order details into context). */
+    public function orderLookupEndpoint(): BelongsTo
+    {
+        return $this->belongsTo(Endpoint::class, 'order_lookup_endpoint_id');
     }
 
     /** Block options that target this step (next_step_id). */

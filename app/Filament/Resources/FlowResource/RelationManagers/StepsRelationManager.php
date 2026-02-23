@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\FlowResource\RelationManagers;
 
 use App\Models\Block;
+use App\Models\Endpoint;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -29,8 +30,8 @@ class StepsRelationManager extends RelationManager
                     ->schema([
                         Textarea::make('router_prompt')
                             ->rows(3)
-                            ->placeholder('e.g. Given the user message, respond with JSON: intent, target_block_key (one of the allowed blocks), target_step_key, confidence (0-1), reason, customer_message, require_confirmation, variables.')
-                            ->helperText('Prompt that defines how the AI interprets the user and chooses target block/step.'),
+                            ->placeholder('e.g. Given the user message, respond with JSON: intent, target_block_key (one of the allowed blocks), target_step_key, confidence (0-1), reason, customer_message (one short bot reply; do NOT repeat or paraphrase the user), require_confirmation, variables.')
+                            ->helperText('Prompt for the AI. customer_message must be one short bot reply and must NOT repeat what the user said. For a collect step (e.g. email + order number), ask for: intent, variables: { email, order_number }, target_step_key (next step key), confidence, reason, customer_message.'),
                         Textarea::make('system_prompt')
                             ->rows(2)
                             ->placeholder('e.g. You are a support chat router. Output only valid JSON.')
@@ -53,6 +54,12 @@ class StepsRelationManager extends RelationManager
                             ->searchable()
                             ->nullable()
                             ->helperText('Block to show when confidence is low or intent is unclear.'),
+                        Select::make('order_lookup_endpoint_id')
+                            ->label('Order lookup endpoint (optional)')
+                            ->options(Endpoint::query()->pluck('name', 'id')->all())
+                            ->searchable()
+                            ->nullable()
+                            ->helperText('For collect steps: after extracting email/order_number from the user message, call this endpoint and merge the response into context. Configure request_mapper with context.email, context.order_number.'),
                     ])
                     ->columns(1),
                 TextInput::make('ai_model_override')->maxLength(255)->nullable(),
