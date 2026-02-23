@@ -17,9 +17,9 @@ class Step extends Model
     use HasFactory;
 
     protected $fillable = [
-        'flow_id', 'key', 'bot_message_template',
+        'flow_id', 'key', 'sort_order', 'bot_message_template',
         'router_prompt', 'system_prompt',
-        'allowed_block_ids', 'transition_rules', 'fallback_block_id', 'order_lookup_endpoint_id', 'ai_model_override',
+        'allowed_block_ids', 'transition_rules', 'allowed_next_step_ids', 'fallback_block_id', 'order_lookup_endpoint_id', 'ai_model_override',
     ];
 
     protected function casts(): array
@@ -27,6 +27,7 @@ class Step extends Model
         return [
             'allowed_block_ids' => 'array',
             'transition_rules' => 'array',
+            'allowed_next_step_ids' => 'array',
         ];
     }
 
@@ -52,5 +53,15 @@ class Step extends Model
     public function optionsTargetingThis(): HasMany
     {
         return $this->hasMany(BlockOption::class, 'next_step_id');
+    }
+
+    /** Steps that are allowed as next steps from this step (when allowed_next_step_ids is set). */
+    public function allowedNextSteps(): \Illuminate\Database\Eloquent\Collection
+    {
+        $ids = $this->allowed_next_step_ids ?? [];
+        if ($ids === []) {
+            return $this->flow->steps()->get();
+        }
+        return Step::query()->whereIn('id', $ids)->orderBy('sort_order')->orderBy('id')->get();
     }
 }

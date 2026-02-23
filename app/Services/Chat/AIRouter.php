@@ -7,6 +7,7 @@ namespace App\Services\Chat;
 use App\Models\Block;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\Step;
 use App\Services\OpenRouter\OpenRouterClient;
 use App\Support\ChatConstants;
 use Illuminate\Support\Facades\Log;
@@ -32,6 +33,15 @@ final class AIRouter
         $flow = $conversation->flow;
         $step = $conversation->currentStep;
 
+        // Optional: match transition_rules before calling AI (keyword/intent match).
+        if ($step && ! empty($step->transition_rules)) {
+            $directResult = $this->matchTransitionRules($step, $customerMessage->content);
+            if ($directResult !== null) {
+                $telemetry = $this->storeTelemetry($conversation, $customerMessage, $directResult, null, 'transition_rules', null);
+                return ['result' => $directResult, 'telemetry' => $telemetry];
+            }
+        }
+
         $systemPrompt = $step?->system_prompt ?? $flow->system_prompt ?? config('chat.default_system_prompt', 'You are a support chat router. Output only valid JSON.');
         $routerPrompt = $step?->router_prompt ?? $flow->router_prompt ?? config('chat.default_router_prompt', 'Given the user message, respond with JSON: intent, target_block_key, target_step_key, confidence (0-1), reason, customer_message, require_confirmation, variables (object). customer_message must NOT repeat the user.');
 
@@ -42,7 +52,7 @@ final class AIRouter
                 ->pluck('key')
                 ->all();
         }
-        $allowedStepKeys = $flow->steps()->pluck('key')->all();
+        $allowedStepKeys = $this->getAllowedStepKeysForStep($step, $flow);
 
         $constraints = '';
         if ($allowedBlockKeys !== []) {
@@ -68,9 +78,86 @@ final class AIRouter
 
         $stepFallbackBlockKey = $step?->fallbackBlock?->key ?? $this->fallbackBlockKey;
         $result = $this->parseAndValidate($content, $stepFallbackBlockKey);
+        $result = $this->clampResultToAllowedSteps($result, $allowedStepKeys, $stepFallbackBlockKey);
         $telemetry = $this->storeTelemetry($conversation, $customerMessage, $result, $content, $model, $usage);
 
         return ['result' => $result, 'telemetry' => $telemetry];
+    }
+
+    /**
+     * Get allowed step keys for the current step. If step has allowed_next_step_ids set, only those; else all flow steps.
+     *
+     * @return array<int, string>
+     */
+    private function getAllowedStepKeysForStep(?Step $step, \App\Models\Flow $flow): array
+    {
+        if ($step && ! empty($step->allowed_next_step_ids)) {
+            return Step::query()
+                ->whereIn('id', $step->allowed_next_step_ids)
+                ->pluck('key')
+                ->all();
+        }
+        return $flow->steps()->pluck('key')->all();
+    }
+
+    /**
+     * If transition_rules match the user message (intent as substring/keywords), return a RouterResult; else null.
+     */
+    private function matchTransitionRules(Step $step, string $userMessage): ?RouterResult
+    {
+        $rules = $step->transition_rules;
+        if (! is_array($rules)) {
+            return null;
+        }
+        $lower = mb_strtolower($userMessage);
+        foreach ($rules as $rule) {
+            $intent = $rule['intent'] ?? '';
+            if ($intent === '') {
+                continue;
+            }
+            $keywords = array_map('trim', explode(',', $intent));
+            foreach ($keywords as $kw) {
+                if ($kw !== '' && mb_strpos($lower, mb_strtolower($kw)) !== false) {
+                    $targetBlockKey = isset($rule['target_block_key']) && $rule['target_block_key'] !== ''
+                        ? $rule['target_block_key']
+                        : ($step->fallbackBlock?->key ?? $this->fallbackBlockKey);
+                    return new RouterResult(
+                        intent: $intent,
+                        targetBlockKey: $targetBlockKey,
+                        targetStepKey: isset($rule['target_step_key']) && $rule['target_step_key'] !== '' ? $rule['target_step_key'] : null,
+                        confidence: 1.0,
+                        reason: 'transition_rule_match',
+                        customerMessage: config('chat.default_fallback_customer_message', 'Here are your options.'),
+                        requireConfirmation: false,
+                        variables: []
+                    );
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Ensure result.targetStepKey is in allowed list; otherwise clear it.
+     */
+    private function clampResultToAllowedSteps(RouterResult $result, array $allowedStepKeys, string $stepFallbackBlockKey): RouterResult
+    {
+        if ($result->targetStepKey === null) {
+            return $result;
+        }
+        if ($allowedStepKeys !== [] && ! in_array($result->targetStepKey, $allowedStepKeys, true)) {
+            return new RouterResult(
+                intent: $result->intent,
+                targetBlockKey: $result->targetBlockKey,
+                targetStepKey: null,
+                confidence: $result->confidence,
+                reason: $result->reason,
+                customerMessage: $result->customerMessage,
+                requireConfirmation: $result->requireConfirmation,
+                variables: $result->variables
+            );
+        }
+        return $result;
     }
 
     /**

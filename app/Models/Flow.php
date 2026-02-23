@@ -32,10 +32,10 @@ class Flow extends Model
         return $this->belongsTo(Tenant::class);
     }
 
-    /** Steps in this flow. */
+    /** Steps in this flow (ordered by sort_order then id). */
     public function steps(): HasMany
     {
-        return $this->hasMany(Step::class);
+        return $this->hasMany(Step::class)->orderBy('sort_order')->orderBy('id');
     }
 
     /** Conversations using this flow. */
