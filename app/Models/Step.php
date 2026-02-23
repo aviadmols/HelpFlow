@@ -20,6 +20,7 @@ class Step extends Model
         'flow_id', 'key', 'sort_order', 'bot_message_template',
         'router_prompt', 'system_prompt',
         'allowed_block_ids', 'transition_rules', 'allowed_next_step_ids', 'fallback_block_id', 'order_lookup_endpoint_id', 'ai_model_override',
+        'context_variables',
     ];
 
     protected function casts(): array
@@ -28,6 +29,7 @@ class Step extends Model
             'allowed_block_ids' => 'array',
             'transition_rules' => 'array',
             'allowed_next_step_ids' => 'array',
+            'context_variables' => 'array',
         ];
     }
 

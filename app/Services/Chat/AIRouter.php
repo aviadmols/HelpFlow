@@ -62,6 +62,11 @@ final class AIRouter
             $constraints .= "\nAllowed target_step_key values (optional, use only one of these or null): ".implode(', ', $allowedStepKeys).'.';
         }
 
+        $contextVarKeys = $this->getContextVariableKeysForStep($step);
+        if ($contextVarKeys !== []) {
+            $constraints .= "\nExtract from the user message and return in the 'variables' object (use exactly these keys; set to empty string if not found): ".implode(', ', $contextVarKeys).'. These are saved to the conversation context for use in later steps.';
+        }
+
         $userContent = $routerPrompt.$constraints."\n\nUser message: ".$customerMessage->content;
 
         $model = $step?->ai_model_override ?? $flow->default_model ?? OpenRouterClient::getDefaultModel();
@@ -98,6 +103,25 @@ final class AIRouter
                 ->all();
         }
         return $flow->steps()->pluck('key')->all();
+    }
+
+    /**
+     * Get context variable keys defined for this step (saved to conversation context for use in later steps).
+     *
+     * @return array<int, string>
+     */
+    private function getContextVariableKeysForStep(?Step $step): array
+    {
+        if (! $step || ! is_array($step->context_variables)) {
+            return [];
+        }
+        $keys = [];
+        foreach ($step->context_variables as $item) {
+            if (is_array($item) && ! empty($item['key'])) {
+                $keys[] = $item['key'];
+            }
+        }
+        return $keys;
     }
 
     /**

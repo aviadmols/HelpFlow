@@ -18,6 +18,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
+use Filament\Infolists\Infolist;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Actions\CreateAction;
@@ -36,8 +37,12 @@ class StepsRelationManager extends RelationManager
         return 'Steps';
     }
 
-    public function form(Form $form): Form
+    public function form(Form|Infolist $form): Form|Infolist
     {
+        if ($form instanceof Infolist) {
+            return $this->infolist($form);
+        }
+
         $flow = $this->getOwnerRecord();
         $stepOptions = $flow->steps()->pluck('key', 'id')->all();
         $stepKeyOptions = $flow->steps()->pluck('key', 'key')->all();
@@ -46,6 +51,7 @@ class StepsRelationManager extends RelationManager
         return $form
             ->schema([
                 Section::make('AI module')
+                    ->icon('heroicon-m-information-circle')
                     ->description('Describe what you want this step to do; click "Generate step" to fill the fields from AI.')
                     ->schema([
                         Textarea::make('ai_step_description')
@@ -53,7 +59,8 @@ class StepsRelationManager extends RelationManager
                             ->placeholder('e.g. Collect customer email and order number, then ask what they want to do: track order, cancel, or get help.')
                             ->rows(4)
                             ->columnSpanFull()
-                            ->live(),
+                            ->live()
+                            ->hintIcon('heroicon-m-information-circle', tooltip: 'Describe in one sentence what this step should do. Click "Generate step" to auto-fill the form from this description using AI.'),
                         Placeholder::make('generate_step_ai_btn')
                             ->label('')
                             ->content(new HtmlString(
@@ -63,17 +70,52 @@ class StepsRelationManager extends RelationManager
                     ->collapsible()
                     ->collapsed(false)
                     ->columnSpanFull(),
-                TextInput::make('key')->required()->maxLength(64),
+                TextInput::make('key')
+                    ->required()
+                    ->maxLength(64)
+                    ->hintIcon('heroicon-m-information-circle', tooltip: 'Unique identifier for this step (e.g. welcome, collect_order, confirm_cancel). Use snake_case. Used in transitions and URLs.'),
                 Textarea::make('bot_message_template')
                     ->label('Bot message to customer')
                     ->rows(3)
-                    ->columnSpanFull(),
+                    ->columnSpanFull()
+                    ->hintIcon('heroicon-m-information-circle', tooltip: 'The message the bot shows when the conversation reaches this step. You can use variables like {{ context.email }}. Use "Suggest bot message with AI" to generate a draft.'),
                 Placeholder::make('suggest_bot_message_ai')
                     ->label('')
                     ->content(new HtmlString(
                         '<button type="button" wire:click="suggestBotMessageWithAi" class="inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600">Suggest bot message with AI</button>'
                     )),
+                Section::make('Session variables (saved to conversation context)')
+                    ->icon('heroicon-m-information-circle')
+                    ->description('Define which values this step will save as global session variables. The AI router will extract them from the user message; they are stored in the conversation context and available in later steps in message templates as {{ key }} (e.g. {{ email }}, {{ order_number }}) and in payload mapping as context.key.')
+                    ->schema([
+                        Repeater::make('context_variables')
+                            ->hintIcon('heroicon-m-information-circle', tooltip: 'Add variable keys this step should collect and save. Use snake_case (e.g. email, order_number, customer_name). In later steps and in templates you reference them as context.email, context.order_number.')
+                            ->schema([
+                                TextInput::make('key')
+                                    ->label('Context key')
+                                    ->placeholder('e.g. email, order_number, customer_name')
+                                    ->required()
+                                    ->maxLength(64)
+                                    ->helperText('Use snake_case. This step will save the extracted value under context.<key>.')
+                                    ->hintIcon('heroicon-m-information-circle', tooltip: 'Name of the variable in conversation context. Use only letters, numbers, underscore.'),
+                                TextInput::make('label')
+                                    ->label('Label (optional)')
+                                    ->placeholder('e.g. Customer email')
+                                    ->maxLength(255)
+                                    ->nullable()
+                                    ->helperText('Human-readable description for the AI (what to extract).')
+                                    ->hintIcon('heroicon-m-information-circle', tooltip: 'Optional description shown to the AI so it knows what to extract from the user message.'),
+                            ])
+                            ->columns(2)
+                            ->defaultItems(0)
+                            ->collapsible()
+                            ->itemLabel(fn (array $state): ?string => $state['key'] ?? null)
+                            ->reorderable(),
+                    ])
+                    ->collapsible()
+                    ->collapsed(false),
                 Section::make('Next steps')
+                    ->icon('heroicon-m-information-circle')
                     ->description('Which steps the conversation can move to from this step. Leave empty to allow any step in the flow.')
                     ->schema([
                         Select::make('allowed_next_step_ids')
@@ -81,27 +123,33 @@ class StepsRelationManager extends RelationManager
                             ->options($stepOptions)
                             ->multiple()
                             ->searchable()
-                            ->helperText('Only these steps can be reached from this step. Empty = all flow steps allowed.'),
+                            ->helperText('Only these steps can be reached from this step. Empty = all flow steps allowed.')
+                            ->hintIcon('heroicon-m-information-circle', tooltip: 'Restrict which steps the user can go to from this step. Leave empty to allow any step in the flow. The AI router will only suggest these steps.'),
                     ])
                     ->collapsible()
                     ->collapsed(false),
                 Section::make('Expected answers (transition rules)')
+                    ->icon('heroicon-m-information-circle')
                     ->description('Define intents or keywords that map to a target step or block. Used to guide the AI or for direct matching before calling the AI.')
                     ->schema([
                         Repeater::make('transition_rules')
+                            ->hintIcon('heroicon-m-information-circle', tooltip: 'Add rules: when the user says something matching "Intent / keywords", the conversation goes to the chosen step or block. Use for quick matches (e.g. "cancel" → cancel step) before or instead of calling the AI.')
                             ->schema([
                                 TextInput::make('intent')
                                     ->label('Intent / keywords')
                                     ->placeholder('e.g. cancel, update order')
-                                    ->required(),
+                                    ->required()
+                                    ->hintIcon('heroicon-m-information-circle', tooltip: 'Keywords or intent name. When the user message matches, the conversation goes to the target step or block. Used for direct matching and to guide the AI.'),
                                 Select::make('target_step_key')
                                     ->label('Target step')
                                     ->options($stepKeyOptions)
-                                    ->nullable(),
+                                    ->nullable()
+                                    ->hintIcon('heroicon-m-information-circle', tooltip: 'Step to jump to when this intent is matched. Leave empty if you only use target block.'),
                                 Select::make('target_block_key')
                                     ->label('Target block')
                                     ->options($blockKeyOptions)
-                                    ->nullable(),
+                                    ->nullable()
+                                    ->hintIcon('heroicon-m-information-circle', tooltip: 'Block to show when this intent is matched (e.g. FAQ block). Can be used with or without a target step.'),
                             ])
                             ->columns(3)
                             ->defaultItems(0)
@@ -111,71 +159,90 @@ class StepsRelationManager extends RelationManager
                     ->collapsible()
                     ->collapsed(false),
                 Section::make('Suggestions (options for this step)')
+                    ->icon('heroicon-m-information-circle')
                     ->description('Buttons shown to the customer in this step. When set, these replace block-based options. What to send: map context to request body. What we receive: use success/failure template with variables from the endpoint response mapping.')
                     ->schema([
                         Repeater::make('stepOptions')
+                            ->hintIcon('heroicon-m-information-circle', tooltip: 'Define buttons the customer sees in this step (e.g. "Track order", "Cancel"). Each option can call an API, go to a step, show a confirmation, or run AI. Only visible when editing an existing step.')
                             ->relationship(
                                 modifyQueryUsing: fn ($query) => $query->orderBy('sort_order')->orderBy('id')
                             )
                             ->schema([
-                                TextInput::make('label')->required()->maxLength(255),
+                                TextInput::make('label')
+                                    ->required()
+                                    ->maxLength(255)
+                                    ->hintIcon('heroicon-m-information-circle', tooltip: 'Button label shown to the customer (e.g. "Track my order", "Cancel order").'),
                                 TextInput::make('bot_reply')
                                     ->label('Bot reply (optional)')
                                     ->maxLength(512)
-                                    ->nullable(),
+                                    ->nullable()
+                                    ->hintIcon('heroicon-m-information-circle', tooltip: 'Short message the bot sends when the customer clicks this option. Optional.'),
                                 Select::make('action_type')
                                     ->label('Action type')
                                     ->options(collect(ChatConstants::actionTypes())->mapWithKeys(fn ($v) => [$v => $v])->all())
                                     ->required()
-                                    ->live(),
+                                    ->live()
+                                    ->hintIcon('heroicon-m-information-circle', tooltip: 'What happens when the customer clicks: API_CALL (call endpoint), NEXT_STEP (go to step), CONFIRM (confirmation step), HUMAN_HANDOFF, OPEN_URL, NO_OP, RUN_PROMPT (AI).'),
                                 Select::make('endpoint_id')
                                     ->label('Endpoint')
                                     ->relationship('endpoint', 'name')
                                     ->searchable()
                                     ->required(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_API_CALL)
                                     ->nullable()
-                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_API_CALL),
+                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_API_CALL)
+                                    ->hintIcon('heroicon-m-information-circle', tooltip: 'The API endpoint to call when this option is selected. Configure endpoints in the Endpoints resource.'),
                                 KeyValue::make('payload_mapper')
                                     ->label('What to send (payload mapping)')
                                     ->keyLabel('Request key')
                                     ->valueLabel('Context source (e.g. context.email)')
                                     ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_API_CALL)
-                                    ->helperText('Map context/customer to request body. Endpoint request_mapper is applied first.'),
+                                    ->helperText('Map context/customer to request body. Endpoint request_mapper is applied first.')
+                                    ->hintIcon('heroicon-m-information-circle', tooltip: 'Map each request key to a context variable (e.g. context.email, context.order_number). These are sent in the API request body.'),
                                 Textarea::make('success_template')
                                     ->label('Success template (what we receive)')
                                     ->rows(2)
-                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_API_CALL),
+                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_API_CALL)
+                                    ->hintIcon('heroicon-m-information-circle', tooltip: 'Message shown when the API returns success. Use variables from the endpoint response mapping (e.g. {{ response.order_status }}).'),
                                 Textarea::make('failure_template')
                                     ->label('Failure template')
                                     ->rows(2)
-                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_API_CALL),
+                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_API_CALL)
+                                    ->hintIcon('heroicon-m-information-circle', tooltip: 'Message shown when the API call fails. You can use variables from context or a fixed message.'),
                                 Select::make('next_step_id')
                                     ->label('Next step')
                                     ->options($stepOptions)
                                     ->searchable()
                                     ->required(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_NEXT_STEP)
                                     ->nullable()
-                                    ->visible(fn (Get $get) => in_array($get('action_type'), [ChatConstants::ACTION_TYPE_API_CALL, ChatConstants::ACTION_TYPE_NEXT_STEP, ChatConstants::ACTION_TYPE_RUN_PROMPT], true)),
+                                    ->visible(fn (Get $get) => in_array($get('action_type'), [ChatConstants::ACTION_TYPE_API_CALL, ChatConstants::ACTION_TYPE_NEXT_STEP, ChatConstants::ACTION_TYPE_RUN_PROMPT], true))
+                                    ->hintIcon('heroicon-m-information-circle', tooltip: 'Step to go to after this action (e.g. after API success or for NEXT_STEP).'),
                                 Select::make('next_step_on_failure_id')
                                     ->label('Next step on failure')
                                     ->options($stepOptions)
                                     ->searchable()
                                     ->nullable()
-                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_API_CALL),
+                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_API_CALL)
+                                    ->hintIcon('heroicon-m-information-circle', tooltip: 'Step to go to when the API call fails. Optional.'),
                                 Select::make('confirm_step_id')
                                     ->label('Confirmation step')
                                     ->options($stepOptions)
                                     ->searchable()
                                     ->required(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_CONFIRM)
                                     ->nullable()
-                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_CONFIRM),
+                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_CONFIRM)
+                                    ->hintIcon('heroicon-m-information-circle', tooltip: 'Step that asks the user to confirm (e.g. "Are you sure you want to cancel?"). Required for CONFIRM action type.'),
                                 Textarea::make('prompt_template')
                                     ->label('AI prompt (RUN_PROMPT)')
                                     ->rows(3)
                                     ->required(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_RUN_PROMPT)
                                     ->nullable()
-                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_RUN_PROMPT),
-                                TextInput::make('sort_order')->label('Sort order')->numeric()->default(0),
+                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_RUN_PROMPT)
+                                    ->hintIcon('heroicon-m-information-circle', tooltip: 'Prompt sent to the AI when the customer clicks this option. Use for free-form AI replies before going to next step.'),
+                                TextInput::make('sort_order')
+                                    ->label('Sort order')
+                                    ->numeric()
+                                    ->default(0)
+                                    ->hintIcon('heroicon-m-information-circle', tooltip: 'Order of this button among the step options. Lower numbers appear first.'),
                             ])
                             ->columns(1)
                             ->collapsible()
@@ -187,6 +254,7 @@ class StepsRelationManager extends RelationManager
                     ->collapsible()
                     ->collapsed(false),
                 Section::make('Blocks & fallback')
+                    ->icon('heroicon-m-information-circle')
                     ->description('Blocks the customer can be directed to in this step. If the AI does not recognize the intent, the fallback block is shown.')
                     ->schema([
                         Select::make('allowed_block_ids')
@@ -194,22 +262,26 @@ class StepsRelationManager extends RelationManager
                             ->options(Block::query()->pluck('title', 'id')->all())
                             ->multiple()
                             ->searchable()
-                            ->helperText('Only these blocks can be shown in this step. Leave empty to allow any block.'),
+                            ->helperText('Only these blocks can be shown in this step. Leave empty to allow any block.')
+                            ->hintIcon('heroicon-m-information-circle', tooltip: 'Restrict which content blocks the AI can show in this step. Empty = any block. Blocks are reusable content (e.g. FAQ, policies).'),
                         Select::make('fallback_block_id')
                             ->label('Fallback block (when AI doesn\'t recognize)')
                             ->options(Block::query()->pluck('title', 'id')->all())
                             ->searchable()
                             ->nullable()
-                            ->helperText('Block to show when confidence is low or intent is unclear.'),
+                            ->helperText('Block to show when confidence is low or intent is unclear.')
+                            ->hintIcon('heroicon-m-information-circle', tooltip: 'When the AI is unsure or the intent is unclear, this block is shown (e.g. "Sorry, I didn\'t understand. Here are some options.").'),
                         Select::make('order_lookup_endpoint_id')
                             ->label('Order lookup endpoint (optional)')
                             ->options(Endpoint::query()->pluck('name', 'id')->all())
                             ->searchable()
                             ->nullable()
-                            ->helperText('For collect steps: after extracting email/order_number from the user message, call this endpoint and merge the response into context.'),
+                            ->helperText('For collect steps: after extracting email/order_number from the user message, call this endpoint and merge the response into context.')
+                            ->hintIcon('heroicon-m-information-circle', tooltip: 'Optional. After the user provides email/order number, call this endpoint and add the response to context for the rest of the conversation.'),
                     ])
                     ->columns(1),
                 Section::make('AI routing (this step)')
+                    ->icon('heroicon-m-information-circle')
                     ->description('Override flow prompts for this step. Leave empty to use flow defaults.')
                     ->schema([
                         Placeholder::make('suggest_router_prompt_ai')
@@ -220,11 +292,16 @@ class StepsRelationManager extends RelationManager
                         Textarea::make('router_prompt')
                             ->rows(3)
                             ->placeholder('e.g. Given the user message, respond with JSON: intent, target_block_key, target_step_key, confidence (0-1), reason, customer_message, require_confirmation, variables.')
-                            ->helperText('customer_message must be one short bot reply and must NOT repeat what the user said.'),
+                            ->helperText('customer_message must be one short bot reply and must NOT repeat what the user said.')
+                            ->hintIcon('heroicon-m-information-circle', tooltip: 'Instructions for the AI router in this step. Define the expected JSON shape and how to choose target step/block. Overrides the flow-level router prompt.'),
                         Textarea::make('system_prompt')
                             ->rows(2)
-                            ->placeholder('e.g. You are a support chat router. Output only valid JSON.'),
-                        TextInput::make('ai_model_override')->maxLength(255)->nullable(),
+                            ->placeholder('e.g. You are a support chat router. Output only valid JSON.')
+                            ->hintIcon('heroicon-m-information-circle', tooltip: 'System prompt for the router AI (e.g. role and output format). Leave empty to use the flow default.'),
+                        TextInput::make('ai_model_override')
+                            ->maxLength(255)
+                            ->nullable()
+                            ->hintIcon('heroicon-m-information-circle', tooltip: 'Override the flow AI model for this step only (e.g. openai/gpt-4). Leave empty to use the flow default.'),
                     ])
                     ->columns(1)
                     ->collapsible(),
@@ -409,6 +486,9 @@ You are a step designer for a customer support chat flow. Given a short descript
   "key": "snake_case_step_key",
   "bot_message_template": "One or two sentences the bot shows to the customer in English.",
   "router_prompt": "Optional instructions for the AI router (or null).",
+  "context_variables": [
+    { "key": "variable_key_snake_case", "label": "Optional human-readable description" }
+  ],
   "transition_rules": [
     { "intent": "keywords or intent", "target_step_key": "step_key or null", "target_block_key": "block_key or null" }
   ],
@@ -430,7 +510,7 @@ You are a step designer for a customer support chat flow. Given a short descript
   ]
 }
 
-Rules: Use only step keys, block keys, and endpoint names from the context provided. action_type must be one of: API_CALL, NEXT_STEP, CONFIRM, HUMAN_HANDOFF, OPEN_URL, NO_OP, RUN_PROMPT. Omit step_options if the step should have no suggestion buttons. Keep transition_rules and step_options arrays empty if not needed.
+Rules: Use only step keys, block keys, and endpoint names from the context provided. action_type must be one of: API_CALL, NEXT_STEP, CONFIRM, HUMAN_HANDOFF, OPEN_URL, NO_OP, RUN_PROMPT. For context_variables use snake_case keys (e.g. email, order_number, customer_name); these are saved to the conversation and available in later steps as context.key. Omit step_options if the step should have no suggestion buttons. Keep transition_rules, context_variables and step_options empty arrays if not needed.
 PROMPT;
 
         $userPrompt = sprintf(
@@ -510,6 +590,19 @@ PROMPT;
         }
         if (array_key_exists('router_prompt', $json)) {
             $fill['router_prompt'] = $json['router_prompt'] === null ? '' : (string) $json['router_prompt'];
+        }
+
+        if (isset($json['context_variables']) && is_array($json['context_variables'])) {
+            $fill['context_variables'] = [];
+            foreach ($json['context_variables'] as $item) {
+                if (! is_array($item) || empty($item['key'])) {
+                    continue;
+                }
+                $fill['context_variables'][] = [
+                    'key' => $item['key'],
+                    'label' => $item['label'] ?? null,
+                ];
+            }
         }
 
         $allowedNextStepIds = [];

@@ -10,6 +10,13 @@
             error: null,
             conversationViewerUrlBase: '/admin/conversations',
 
+            scrollToBottom() {
+                this.$nextTick(() => {
+                    const el = this.$refs.messagesContainer;
+                    if (el) el.scrollTop = el.scrollHeight;
+                });
+            },
+
             async startConversation() {
                 if (! this.selectedFlowKey) return;
                 this.loading = true;
@@ -30,6 +37,7 @@
                         this.messages.push({ role: 'assistant', content: data.block.bot_message });
                     }
                     this.currentBlock = data.block || null;
+                    this.scrollToBottom();
                 } catch (e) {
                     this.error = e.message || 'Failed to start conversation';
                 } finally {
@@ -56,6 +64,7 @@
                         this.messages.push({ role: 'assistant', content: data.block.bot_message });
                     }
                     this.currentBlock = data.block || this.currentBlock;
+                    this.scrollToBottom();
                 } catch (e) {
                     this.error = e.message || 'Failed to send message';
                 } finally {
@@ -63,21 +72,25 @@
                 }
             },
 
-            async clickOption(optionId, label) {
+            async clickOption(opt) {
                 if (! this.conversationId) return;
-                this.messages.push({ role: 'user', content: label || 'Option ' + optionId });
+                this.messages.push({ role: 'user', content: opt.label || 'Option ' + opt.id });
                 this.loading = true;
                 this.error = null;
+                const body = opt.option_source === 'step'
+                    ? { step_option_id: opt.id }
+                    : { option_id: opt.id };
                 try {
                     const res = await fetch(`/api/chat/${this.conversationId}/option`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                        body: JSON.stringify({ option_id: optionId })
+                        body: JSON.stringify(body)
                     });
                     const data = await res.json();
                     if (!res.ok) throw new Error(data.error || res.statusText);
                     (data.messages || []).forEach(m => this.messages.push({ role: m.role || 'assistant', content: m.content || '' }));
                     this.currentBlock = data.block || this.currentBlock;
+                    this.scrollToBottom();
                 } catch (e) {
                     this.error = e.message || 'Failed to send option';
                 } finally {
@@ -94,7 +107,7 @@
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Flow</label>
                     <select
                         x-model="selectedFlowKey"
-                        class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm"
+                        class="w-full rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm shadow-sm focus:border-primary-500 focus:ring-primary-500"
                     >
                         <option value="">— Select flow —</option>
                         <template x-for="f in flows" :key="f.key">
@@ -118,7 +131,7 @@
         <template x-if="conversationId">
             <div class="space-y-4">
                 <div class="flex items-center justify-between">
-                    <h3 class="font-semibold text-lg">Chat</h3>
+                    <h3 class="font-semibold text-lg text-gray-900 dark:text-gray-100">Chat</h3>
                     <a
                         :href="conversationViewerUrlBase + '/' + conversationId"
                         target="_blank"
@@ -128,47 +141,55 @@
                     </a>
                 </div>
 
-                <div class="rounded-lg bg-white dark:bg-gray-800 shadow border border-gray-200 dark:border-gray-700 overflow-hidden">
-                    <div class="p-4 space-y-3 max-h-[360px] overflow-y-auto">
+                <div class="rounded-xl bg-white dark:bg-gray-800 shadow border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col min-h-[320px] max-h-[520px]">
+                    <div
+                        x-ref="messagesContainer"
+                        class="flex flex-col p-4 space-y-3 min-h-[240px] max-h-[400px] overflow-y-auto"
+                    >
                         <template x-for="(msg, i) in messages" :key="i">
                             <div
-                                :class="msg.role === 'user' ? 'ml-8 text-right' : 'mr-8 text-left'"
+                                :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'"
                             >
-                                <span
-                                    class="text-xs font-medium text-gray-500 dark:text-gray-400"
-                                    x-text="msg.role === 'user' ? 'You' : 'Bot'"
-                                ></span>
-                                <p class="text-sm mt-0.5 break-words" x-text="msg.content"></p>
+                                <div
+                                    :class="msg.role === 'user'
+                                        ? 'max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-br-md px-4 py-2.5 bg-primary-600 text-white dark:bg-primary-500 shadow-sm'
+                                        : 'max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-bl-md px-4 py-2.5 bg-gray-200 text-gray-900 dark:bg-gray-600 dark:text-gray-100 shadow-sm'"
+                                >
+                                    <p class="text-sm break-words whitespace-pre-wrap m-0" x-text="msg.content"></p>
+                                </div>
                             </div>
                         </template>
                     </div>
 
-                    <div class="p-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
+                    <div class="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 space-y-3 flex-shrink-0">
                         <template x-if="currentBlock && currentBlock.options && currentBlock.options.length">
-                            <div class="flex flex-wrap gap-2">
-                                <template x-for="opt in currentBlock.options" :key="opt.id">
-                                    <button
-                                        type="button"
-                                        @click="clickOption(opt.id, opt.label)"
-                                        :disabled="loading"
-                                        class="inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50"
-                                        x-text="opt.label"
-                                    ></button>
-                                </template>
+                            <div class="space-y-1.5">
+                                <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Options</span>
+                                <div class="flex flex-wrap gap-2">
+                                    <template x-for="opt in currentBlock.options" :key="opt.id">
+                                        <button
+                                            type="button"
+                                            @click="clickOption(opt)"
+                                            :disabled="loading"
+                                            class="inline-flex items-center justify-center rounded-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors shadow-sm"
+                                            x-text="opt.label"
+                                        ></button>
+                                    </template>
+                                </div>
                             </div>
                         </template>
-                        <form @submit.prevent="sendMessage($refs.input.value); $refs.input.value = ''" class="flex gap-2">
+                        <form @submit.prevent="sendMessage($refs.input.value); $refs.input.value = ''" class="flex gap-0 rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 shadow-sm focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-primary-500">
                             <input
                                 x-ref="input"
                                 type="text"
                                 placeholder="Type a message…"
                                 :disabled="loading"
-                                class="flex-1 rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                                class="flex-1 min-w-0 px-4 py-2.5 bg-transparent border-0 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-sm focus:ring-0 focus:outline-none"
                             />
                             <button
                                 type="submit"
                                 :disabled="loading"
-                                class="filament-button filament-button-size-sm inline-flex items-center justify-center rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none filament-page-button-primary bg-primary-600 hover:bg-primary-500 focus:ring-primary-500 text-white shadow px-4 py-2 text-sm disabled:opacity-70"
+                                class="inline-flex items-center justify-center rounded-r-lg bg-primary-600 hover:bg-primary-500 text-white px-4 py-2.5 text-sm font-medium disabled:opacity-70 transition-colors"
                             >
                                 Send
                             </button>
