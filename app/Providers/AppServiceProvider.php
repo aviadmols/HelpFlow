@@ -7,6 +7,7 @@ use App\Services\Chat\BlockPresenter;
 use App\Services\Chat\TemplateRenderer;
 use App\Services\OpenRouter\OpenRouterClient;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\URL;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -35,6 +36,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        // Force HTTPS in production so asset URLs (Vite) and links use https (avoids Mixed Content behind proxies like Railway).
+        if ($this->app->environment('production')) {
+            URL::forceScheme('https');
+        }
     }
 }

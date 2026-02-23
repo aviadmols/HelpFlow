@@ -64,6 +64,7 @@ The repo includes a **Dockerfile** that runs `composer install` with `--ignore-p
 ## Environment (.env)
 
 - Set `APP_ENV=production`, `APP_DEBUG=false`, and a strong `APP_KEY`.
+- Set `APP_URL` to your public HTTPS URL (e.g. `https://your-app.up.railway.app`). The app forces HTTPS in production so assets load over HTTPS and Mixed Content is avoided.
 - **Database**: Use PostgreSQL in production.
   - **Railway**: If you add a PostgreSQL service, Railway sets `DATABASE_URL`. The app will use PostgreSQL automatically (no need to set `DB_CONNECTION`).
   - **Elsewhere**: Set `DB_CONNECTION=pgsql` and `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (or `DATABASE_URL`).
