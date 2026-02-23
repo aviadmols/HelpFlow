@@ -163,9 +163,9 @@ class StepsRelationManager extends RelationManager
                             ->collapsible()
                             ->itemLabel(fn ($state) => $state['label'] ?? 'Suggestion')
                             ->reorderable()
-                            ->visible(fn () => (bool) $this->getRecord()?->getKey()),
+                            ->visible(fn () => (bool) $this->getMountedTableActionRecord()?->getKey()),
                     ])
-                    ->visible(fn () => (bool) $this->getRecord()?->getKey())
+                    ->visible(fn () => (bool) $this->getMountedTableActionRecord()?->getKey())
                     ->collapsible()
                     ->collapsed(false),
                 Section::make('Blocks & fallback')
