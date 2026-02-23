@@ -30,7 +30,7 @@ class StepsRelationManager extends RelationManager
 
     public static function getTitle(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): string
     {
-        return 'Steps (define allowed next steps, expected answers, blocks & fallback)';
+        return 'Steps';
     }
 
     public function form(Form $form): Form
