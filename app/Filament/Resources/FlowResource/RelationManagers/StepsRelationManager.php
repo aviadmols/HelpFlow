@@ -20,6 +20,11 @@ class StepsRelationManager extends RelationManager
 {
     protected static string $relationship = 'steps';
 
+    public static function getTitle(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): string
+    {
+        return 'Steps (define allowed next steps, expected answers, blocks & fallback)';
+    }
+
     public function form(Form $form): Form
     {
         $flow = $this->getOwnerRecord();
@@ -44,7 +49,8 @@ class StepsRelationManager extends RelationManager
                             ->searchable()
                             ->helperText('Only these steps can be reached from this step. Empty = all flow steps allowed.'),
                     ])
-                    ->collapsible(),
+                    ->collapsible()
+                    ->collapsed(false),
                 Section::make('Expected answers (transition rules)')
                     ->description('Define intents or keywords that map to a target step or block. Used to guide the AI or for direct matching before calling the AI.')
                     ->schema([
@@ -68,7 +74,8 @@ class StepsRelationManager extends RelationManager
                             ->collapsible()
                             ->itemLabel(fn (array $state): ?string => $state['intent'] ?? null),
                     ])
-                    ->collapsible(),
+                    ->collapsible()
+                    ->collapsed(false),
                 Section::make('Blocks & fallback')
                     ->description('Blocks the customer can be directed to in this step. If the AI does not recognize the intent, the fallback block is shown.')
                     ->schema([
@@ -117,6 +124,18 @@ class StepsRelationManager extends RelationManager
             ->columns([
                 TextColumn::make('key'),
                 TextColumn::make('bot_message_template')->limit(40),
+                TextColumn::make('allowed_next_step_ids')
+                    ->label('Allowed next steps')
+                    ->formatStateUsing(function ($state, $record): string {
+                        if (empty($state) || ! is_array($state)) {
+                            return 'All steps';
+                        }
+                        $steps = \App\Models\Step::query()->whereIn('id', $state)->pluck('key')->all();
+                        return implode(', ', $steps) ?: '—';
+                    }),
+                TextColumn::make('transition_rules')
+                    ->label('Expected answers')
+                    ->formatStateUsing(fn ($state): string => is_array($state) && count($state) > 0 ? count($state) . ' rule(s)' : '—'),
             ]);
     }
 }
