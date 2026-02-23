@@ -3,12 +3,29 @@
         x-data="{
             flows: @js($flows),
             selectedFlowKey: '',
+            activeFlowKey: '',
+            activeFlowName: '',
+            flowChangedNotice: false,
             conversationId: null,
             messages: [],
             currentBlock: null,
             loading: false,
             error: null,
             conversationViewerUrlBase: '/admin/conversations',
+
+            init() {
+                this.$watch('selectedFlowKey', (newVal, oldVal) => {
+                    if (oldVal === undefined) return;
+                    if (this.conversationId) {
+                        this.conversationId = null;
+                        this.messages = [];
+                        this.currentBlock = null;
+                        this.activeFlowKey = '';
+                        this.activeFlowName = '';
+                        this.flowChangedNotice = true;
+                    }
+                });
+            },
 
             scrollToBottom() {
                 this.$nextTick(() => {
@@ -33,6 +50,9 @@
                     const data = await res.json();
                     if (!res.ok) throw new Error(data.error || res.statusText);
                     this.conversationId = data.conversation_id;
+                    this.activeFlowKey = data.flow_key || '';
+                    this.activeFlowName = data.flow_name || '';
+                    this.flowChangedNotice = false;
                     if (data.block && data.block.bot_message) {
                         this.messages.push({ role: 'assistant', content: data.block.bot_message });
                     }
@@ -128,10 +148,19 @@
 
         <div x-show="error" x-text="error" class="rounded-lg bg-danger-50 dark:bg-danger-900/20 text-danger-700 dark:text-danger-400 p-3 text-sm"></div>
 
+        <div x-show="flowChangedNotice" class="rounded-lg bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 p-3 text-sm">
+            Flow changed. Click &quot;Start conversation&quot; to test the new flow.
+        </div>
+
         <template x-if="conversationId">
             <div class="space-y-4">
-                <div class="flex items-center justify-between">
-                    <h3 class="font-semibold text-lg text-gray-900 dark:text-gray-100">Chat</h3>
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                        <h3 class="font-semibold text-lg text-gray-900 dark:text-gray-100">Chat</h3>
+                        <p x-show="activeFlowName || activeFlowKey" class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                            Testing flow: <span x-text="activeFlowName || '—'"></span> (<span x-text="activeFlowKey || '—'"></span>)
+                        </p>
+                    </div>
                     <a
                         :href="conversationViewerUrlBase + '/' + conversationId"
                         target="_blank"

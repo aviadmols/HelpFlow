@@ -52,9 +52,13 @@ class ChatController extends Controller
             $customer = Customer::findOrFail($customerId);
         }
 
-        $flowKey = $request->input('flow_key', config('chat.default_flow_key'));
+        $flowKeyInput = $request->input('flow_key');
+        $flowKey = $flowKeyInput !== null && $flowKeyInput !== '' ? $flowKeyInput : config('chat.default_flow_key');
         $flow = Flow::where('key', $flowKey)->where('active', true)->first();
         if (! $flow) {
+            if ($flowKeyInput !== null && $flowKeyInput !== '') {
+                return response()->json(['error' => 'Flow not found for key: '.$flowKeyInput], 422);
+            }
             $flow = Flow::where('active', true)->first();
         }
         if (! $flow) {
@@ -76,6 +80,8 @@ class ChatController extends Controller
         return response()->json([
             'conversation_id' => $conversation->id,
             'customer_id' => $customer->id,
+            'flow_key' => $flow->key,
+            'flow_name' => $flow->name,
             'messages' => [],
             'block' => $presented,
         ]);
