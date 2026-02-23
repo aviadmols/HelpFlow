@@ -12,9 +12,9 @@ When deploying to **Railway** with Railpack, the build installs only a default s
    - **Value:** `intl,zip,pcntl`
 3. Redeploy. Railpack will install these extensions before running `composer install`.
 
-If **pcntl** is not available in the Railpack image, use only `intl,zip`. Then run the queue with `php artisan queue:work` instead of Horizon, or add `--ignore-platform-req=ext-pcntl --ignore-platform-req=ext-posix` to the Composer install step (e.g. via a custom build script) and use `queue:work`.
+If **pcntl** is not available (FrankenPHP/Railpack often does not include it), the project includes a **railpack.json** that runs `composer install` with `--ignore-platform-req=ext-pcntl --ignore-platform-req=ext-posix`, so the build succeeds. On that runtime you **cannot** run `php artisan horizon`; use **`php artisan queue:work`** (or a similar worker) for the queue instead.
 
-The project also declares `ext-intl` and `ext-zip` in `composer.json` so that Railpack can pick them up; if your Railpack version uses that, the variable above may be redundant for intl/zip.
+The project also declares `ext-intl` and `ext-zip` in `composer.json` so that Railpack installs them; set `RAILPACK_PHP_EXTENSIONS=intl,zip` if needed.
 
 ## PHP and Composer
 

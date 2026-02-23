@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "steps": {
+    "install:composer": {
+      "commands": [
+        "composer install --optimize-autoloader --no-scripts --no-interaction --ignore-platform-req=ext-pcntl --ignore-platform-req=ext-posix"
+      ]
+    }
+  }
+}
