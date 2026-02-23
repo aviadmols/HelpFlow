@@ -392,7 +392,8 @@ class StepsRelationManager extends RelationManager
             return;
         }
 
-        $state = $this->form->getState();
+        $form = $this->form();
+        $state = $form->getState();
         $stepKey = $state['key'] ?? 'this step';
 
         $systemPrompt = 'You suggest a short, friendly customer support bot message for a chat step. One or two sentences in English only. No JSON, no quotes—just the message text.';
@@ -412,7 +413,7 @@ class StepsRelationManager extends RelationManager
             return;
         }
 
-        $this->form->fill(['bot_message_template' => $content]);
+        $form->fill(['bot_message_template' => $content]);
         Notification::make()
             ->title('Suggestion applied')
             ->body('Bot message filled. You can edit it before saving.')
@@ -436,7 +437,8 @@ class StepsRelationManager extends RelationManager
             return;
         }
 
-        $state = $this->form->getState();
+        $form = $this->form();
+        $state = $form->getState();
         $stepKey = $state['key'] ?? 'this step';
         $allowedBlocks = $state['allowed_block_ids'] ?? [];
         $blockKeys = $allowedBlocks
@@ -469,7 +471,7 @@ class StepsRelationManager extends RelationManager
             return;
         }
 
-        $this->form->fill(['router_prompt' => $content]);
+        $form->fill(['router_prompt' => $content]);
         Notification::make()
             ->title('Suggestion applied')
             ->body('Router prompt filled. You can edit it before saving.')
@@ -493,7 +495,8 @@ class StepsRelationManager extends RelationManager
             return;
         }
 
-        $state = $this->form->getState();
+        $form = $this->form();
+        $state = $form->getState();
         $description = trim((string) ($state['ai_step_description'] ?? ''));
         if ($description === '') {
             Notification::make()
@@ -592,7 +595,7 @@ PROMPT;
             unset($fill['stepOptions']);
         }
 
-        $this->form->fill($fill);
+        $form->fill($fill);
         Notification::make()
             ->title('Step generated')
             ->body('Fields have been filled. Edit and save as needed.')
