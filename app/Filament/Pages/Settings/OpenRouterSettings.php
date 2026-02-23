@@ -78,18 +78,31 @@ class OpenRouterSettings extends Page implements HasForms
 
     /**
      * Save settings to the database and show success notification.
+     * Catches DB/cache errors and shows a clear message so save failures are visible.
      */
     public function save(): void
     {
-        $data = $this->form->getState();
-        Setting::set('openrouter_api_key', $data['openrouter_api_key'] !== '' ? $data['openrouter_api_key'] : null);
-        Setting::set('openrouter_default_model', $data['openrouter_default_model'] !== '' ? $data['openrouter_default_model'] : null);
+        $this->form->validate();
 
-        Notification::make()
-            ->title('Settings saved')
-            ->body('OpenRouter API token and options have been updated.')
-            ->success()
-            ->send();
+        try {
+            $data = $this->form->getState();
+            Setting::set('openrouter_api_key', isset($data['openrouter_api_key']) && $data['openrouter_api_key'] !== '' ? $data['openrouter_api_key'] : null);
+            Setting::set('openrouter_default_model', isset($data['openrouter_default_model']) && $data['openrouter_default_model'] !== '' ? $data['openrouter_default_model'] : null);
+
+            Notification::make()
+                ->title('Settings saved')
+                ->body('OpenRouter API token and options have been updated.')
+                ->success()
+                ->send();
+        } catch (\Throwable $e) {
+            Notification::make()
+                ->title('Save failed')
+                ->body($e->getMessage())
+                ->danger()
+                ->persistent()
+                ->send();
+            report($e);
+        }
     }
 
     public static function getRoutePath(): string
