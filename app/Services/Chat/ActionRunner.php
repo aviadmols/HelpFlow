@@ -8,7 +8,7 @@ use App\Models\ActionRun;
 use App\Models\BlockOption;
 use App\Models\Conversation;
 use App\Models\Endpoint;
-use App\Models\Message;
+use App\Models\StepOption;
 use App\Support\ChatConstants;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -23,18 +23,19 @@ final class ActionRunner
     ) {}
 
     /**
-     * Run the API action for the given conversation, option, and optional message. Returns ActionRun and success flag.
+     * Run the API action for the given conversation, option (block or step), and optional message.
      *
-     * @return array{action_run: ActionRun, success: bool}
+     * @param  BlockOption|StepOption  $option
+     * @return array{action_run: ActionRun, success: bool, response_body?: array}
      */
-    public function run(Conversation $conversation, BlockOption $option, ?int $messageId = null): array
+    public function run(Conversation $conversation, BlockOption|StepOption $option, ?int $messageId = null): array
     {
         $endpoint = $option->endpoint;
         if (! $endpoint) {
             $run = ActionRun::create([
                 'conversation_id' => $conversation->id,
                 'message_id' => $messageId,
-                'block_option_id' => $option->id,
+                'block_option_id' => $option instanceof BlockOption ? $option->id : null,
                 'endpoint_id' => null,
                 'status' => ChatConstants::RUN_STATUS_FAILED,
                 'error_message' => 'No endpoint configured for this option.',
@@ -46,7 +47,7 @@ final class ActionRunner
         $run = ActionRun::create([
             'conversation_id' => $conversation->id,
             'message_id' => $messageId,
-            'block_option_id' => $option->id,
+            'block_option_id' => $option instanceof BlockOption ? $option->id : null,
             'endpoint_id' => $endpoint->id,
             'status' => ChatConstants::RUN_STATUS_RUNNING,
         ]);
@@ -205,31 +206,49 @@ final class ActionRunner
     }
 
     /**
-     * Build request payload from endpoint request_mapper and conversation context, customer, option.
+     * Build request payload from endpoint request_mapper + option payload_mapper (context/customer/option_label).
      *
+     * @param  BlockOption|StepOption  $option
      * @return array<string, mixed>
      */
-    private function buildPayload(Conversation $conversation, BlockOption $option, Endpoint $endpoint): array
+    private function buildPayload(Conversation $conversation, BlockOption|StepOption $option, Endpoint $endpoint): array
     {
-        $mapper = $endpoint->request_mapper ?? [];
         $context = $conversation->getContextArray();
         $customer = $conversation->customer;
+
+        $payload = $this->applyMapper($endpoint->request_mapper ?? [], $context, $customer, $option->label);
+        $optionMapper = $option->payload_mapper ?? null;
+        if (is_array($optionMapper) && $optionMapper !== []) {
+            $overlay = $this->applyMapper($optionMapper, $context, $customer, $option->label);
+            $payload = array_merge($payload, $overlay);
+        }
+
+        return $payload ?: ['context' => $context, 'customer_id' => $customer?->id];
+    }
+
+    /**
+     * @param  array<string, mixed>  $mapper
+     * @return array<string, mixed>
+     */
+    private function applyMapper(array $mapper, array $context, ?\App\Models\Customer $customer, string $optionLabel): array
+    {
         $payload = [];
         foreach ($mapper as $key => $source) {
-            if (is_string($source)) {
-                if (str_starts_with($source, 'context.')) {
-                    $payload[$key] = $context[substr($source, 8)] ?? null;
-                } elseif (str_starts_with($source, 'customer.')) {
-                    $payload[$key] = $customer->getAttribute(substr($source, 9));
-                } elseif ($source === 'option_label') {
-                    $payload[$key] = $option->label;
-                } else {
-                    $payload[$key] = $context[$source] ?? $source;
-                }
+            if (! is_string($source)) {
+                continue;
+            }
+            if (str_starts_with($source, 'context.')) {
+                $payload[$key] = $context[substr($source, 8)] ?? null;
+            } elseif (str_starts_with($source, 'customer.')) {
+                $payload[$key] = $customer?->getAttribute(substr($source, 9));
+            } elseif ($source === 'option_label') {
+                $payload[$key] = $optionLabel;
+            } else {
+                $payload[$key] = $context[$source] ?? $source;
             }
         }
 
-        return $payload ?: ['context' => $context, 'customer_id' => $customer->id];
+        return $payload;
     }
 
     /**

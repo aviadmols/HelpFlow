@@ -49,6 +49,12 @@ class Step extends Model
         return $this->belongsTo(Endpoint::class, 'order_lookup_endpoint_id');
     }
 
+    /** Step-level suggestions (options) for this step. When present, these are shown instead of block options. */
+    public function stepOptions(): HasMany
+    {
+        return $this->hasMany(StepOption::class)->orderBy('sort_order')->orderBy('id');
+    }
+
     /** Block options that target this step (next_step_id). */
     public function optionsTargetingThis(): HasMany
     {

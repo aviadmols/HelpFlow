@@ -6,7 +6,10 @@ namespace App\Filament\Resources\FlowResource\RelationManagers;
 
 use App\Models\Block;
 use App\Models\Endpoint;
+use App\Models\StepOption;
 use App\Services\OpenRouter\OpenRouterClient;
+use App\Support\ChatConstants;
+use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Section;
@@ -14,6 +17,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
@@ -83,6 +87,82 @@ class StepsRelationManager extends RelationManager
                             ->collapsible()
                             ->itemLabel(fn (array $state): ?string => $state['intent'] ?? null),
                     ])
+                    ->collapsible()
+                    ->collapsed(false),
+                Section::make('Suggestions (options for this step)')
+                    ->description('Buttons shown to the customer in this step. When set, these replace block-based options. What to send: map context to request body. What we receive: use success/failure template with variables from the endpoint response mapping.')
+                    ->schema([
+                        Repeater::make('stepOptions')
+                            ->relationship(
+                                modifyQueryUsing: fn ($query) => $query->orderBy('sort_order')->orderBy('id')
+                            )
+                            ->schema([
+                                TextInput::make('label')->required()->maxLength(255),
+                                TextInput::make('bot_reply')
+                                    ->label('Bot reply (optional)')
+                                    ->maxLength(512)
+                                    ->nullable(),
+                                Select::make('action_type')
+                                    ->label('Action type')
+                                    ->options(collect(ChatConstants::actionTypes())->mapWithKeys(fn ($v) => [$v => $v])->all())
+                                    ->required()
+                                    ->live(),
+                                Select::make('endpoint_id')
+                                    ->label('Endpoint')
+                                    ->relationship('endpoint', 'name')
+                                    ->searchable()
+                                    ->required(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_API_CALL)
+                                    ->nullable()
+                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_API_CALL),
+                                KeyValue::make('payload_mapper')
+                                    ->label('What to send (payload mapping)')
+                                    ->keyLabel('Request key')
+                                    ->valueLabel('Context source (e.g. context.email)')
+                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_API_CALL)
+                                    ->helperText('Map context/customer to request body. Endpoint request_mapper is applied first.'),
+                                Textarea::make('success_template')
+                                    ->label('Success template (what we receive)')
+                                    ->rows(2)
+                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_API_CALL),
+                                Textarea::make('failure_template')
+                                    ->label('Failure template')
+                                    ->rows(2)
+                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_API_CALL),
+                                Select::make('next_step_id')
+                                    ->label('Next step')
+                                    ->options($stepOptions)
+                                    ->searchable()
+                                    ->required(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_NEXT_STEP)
+                                    ->nullable()
+                                    ->visible(fn (Get $get) => in_array($get('action_type'), [ChatConstants::ACTION_TYPE_API_CALL, ChatConstants::ACTION_TYPE_NEXT_STEP, ChatConstants::ACTION_TYPE_RUN_PROMPT], true)),
+                                Select::make('next_step_on_failure_id')
+                                    ->label('Next step on failure')
+                                    ->options($stepOptions)
+                                    ->searchable()
+                                    ->nullable()
+                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_API_CALL),
+                                Select::make('confirm_step_id')
+                                    ->label('Confirmation step')
+                                    ->options($stepOptions)
+                                    ->searchable()
+                                    ->required(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_CONFIRM)
+                                    ->nullable()
+                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_CONFIRM),
+                                Textarea::make('prompt_template')
+                                    ->label('AI prompt (RUN_PROMPT)')
+                                    ->rows(3)
+                                    ->required(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_RUN_PROMPT)
+                                    ->nullable()
+                                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_RUN_PROMPT),
+                                TextInput::make('sort_order')->label('Sort order')->numeric()->default(0),
+                            ])
+                            ->columns(1)
+                            ->collapsible()
+                            ->itemLabel(fn ($state) => $state['label'] ?? 'Suggestion')
+                            ->reorderable()
+                            ->visible(fn () => (bool) $this->getRecord()?->getKey()),
+                    ])
+                    ->visible(fn () => (bool) $this->getRecord()?->getKey())
                     ->collapsible()
                     ->collapsed(false),
                 Section::make('Blocks & fallback')

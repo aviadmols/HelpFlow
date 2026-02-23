@@ -7,6 +7,7 @@ namespace App\Services\Chat;
 use App\Jobs\RunApiActionJob;
 use App\Models\BlockOption;
 use App\Models\Conversation;
+use App\Models\StepOption;
 use App\Models\Message;
 use App\Services\OpenRouter\OpenRouterClient;
 use App\Support\ChatConstants;
@@ -35,8 +36,18 @@ final class ConversationOrchestrator
         $inputType = $input['input_type'] ?? ChatConstants::INPUT_TYPE_TEXT;
         Log::channel('chat')->info('Orchestrator process', ['conversation_id' => $conversation->id, 'input_type' => $inputType]);
 
-        if ($inputType === ChatConstants::INPUT_TYPE_OPTION_CLICK && isset($input['option_id'])) {
-            return $this->processOptionClick($conversation, (int) $input['option_id']);
+        if ($inputType === ChatConstants::INPUT_TYPE_OPTION_CLICK) {
+            if (isset($input['step_option_id'])) {
+                $stepOption = StepOption::with(['step', 'endpoint', 'nextStep', 'nextStepOnFailure', 'confirmStep'])
+                    ->find((int) $input['step_option_id']);
+                if (! $stepOption) {
+                    return $this->fallbackResponse($conversation, 'Invalid option.');
+                }
+                return $this->runOptionClickFlow($conversation, $stepOption, 'step');
+            }
+            if (isset($input['option_id'])) {
+                return $this->processOptionClick($conversation, (int) $input['option_id']);
+            }
         }
 
         return $this->processFreeText($conversation, (string) ($input['message'] ?? ''));
@@ -134,7 +145,7 @@ final class ConversationOrchestrator
     }
 
     /**
-     * Process option click: resolve option, run action (API_CALL -> job; NEXT_STEP/CONFIRM/HUMAN_HANDOFF inline).
+     * Process option click: load block option and run shared flow.
      *
      * @return array{messages: array, block: array, action_status: ?array}
      */
@@ -146,12 +157,27 @@ final class ConversationOrchestrator
             return $this->fallbackResponse($conversation, 'Invalid option.');
         }
 
+        return $this->runOptionClickFlow($conversation, $option, 'block');
+    }
+
+    /**
+     * Run option-click flow for either a BlockOption or StepOption (API_CALL -> job; NEXT_STEP/CONFIRM/HUMAN_HANDOFF/RUN_PROMPT inline).
+     *
+     * @param  BlockOption|StepOption  $option
+     * @return array{messages: array, block: array, action_status: ?array}
+     */
+    private function runOptionClickFlow(Conversation $conversation, BlockOption|StepOption $option, string $optionSource): array
+    {
+        $meta = $optionSource === 'step'
+            ? ['step_option_id' => $option->id, 'step_key' => $option->step->key ?? null]
+            : ['block_option_id' => $option->id, 'block_key' => $option->block->key ?? null];
+
         Message::create([
             'conversation_id' => $conversation->id,
             'role' => ChatConstants::MESSAGE_ROLE_CUSTOMER,
             'content' => $option->label,
             'message_type' => ChatConstants::MESSAGE_TYPE_OPTION_CLICK,
-            'meta' => ['block_option_id' => $option->id, 'block_key' => $option->block->key ?? null],
+            'meta' => $meta,
         ]);
 
         if ($option->action_type === ChatConstants::ACTION_TYPE_API_CALL) {
@@ -165,7 +191,7 @@ final class ConversationOrchestrator
                 ]);
             }
             $messageId = $conversation->messages()->latest('id')->first()?->id;
-            RunApiActionJob::dispatch($conversation->id, $option->id, $messageId);
+            RunApiActionJob::dispatch($conversation->id, $option->id, $messageId, $optionSource);
             $presented = $this->blockPresenter->present($conversation);
             $messages = $this->formatMessagesForResponse($conversation, 2);
 
@@ -249,9 +275,10 @@ final class ConversationOrchestrator
     /**
      * Process RUN_PROMPT: render prompt template, call OpenRouter (ChatGPT), show response, optionally go to next step.
      *
+     * @param  BlockOption|StepOption  $option
      * @return array{messages: array, block: array, action_status: ?array}
      */
-    private function processRunPrompt(Conversation $conversation, BlockOption $option): array
+    private function processRunPrompt(Conversation $conversation, BlockOption|StepOption $option): array
     {
         $promptTemplate = $option->prompt_template ?? '';
         if ($promptTemplate === '') {

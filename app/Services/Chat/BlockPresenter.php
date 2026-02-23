@@ -21,11 +21,38 @@ final class BlockPresenter
 
     /**
      * Get presentable block for conversation: bot message text and list of options (id, label, action_type).
+     * When the current step has step-level suggestions (stepOptions), those are returned with option_source: 'step'.
      *
-     * @return array{bot_message: string, block_key: string, options: array<int, array{id: int, label: string, action_type: string}>}
+     * @return array{bot_message: string, block_key: string, options: array<int, array{id: int, label: string, action_type: string, option_source?: string}>}
      */
     public function present(Conversation $conversation, ?Block $block = null): array
     {
+        $step = $conversation->currentStep;
+        if ($step) {
+            $step->load('stepOptions');
+            if ($step->stepOptions->isNotEmpty()) {
+                $context = $conversation->getContextArray();
+                $botMessage = $this->renderer->render(
+                    $step->bot_message_template ?? '',
+                    $context
+                );
+                $options = [];
+                foreach ($step->stepOptions as $opt) {
+                    $options[] = [
+                        'id' => $opt->id,
+                        'label' => $opt->label,
+                        'action_type' => $opt->action_type,
+                        'option_source' => 'step',
+                    ];
+                }
+                return [
+                    'bot_message' => $botMessage,
+                    'block_key' => $step->key,
+                    'options' => $options,
+                ];
+            }
+        }
+
         $block = $block ?? $this->resolveBlockForConversation($conversation);
         if (! $block->relationLoaded('options')) {
             $block->load('options');

@@ -6,6 +6,7 @@ namespace App\Jobs;
 
 use App\Models\BlockOption;
 use App\Models\Conversation;
+use App\Models\StepOption;
 use App\Services\Chat\ActionRunner;
 use App\Services\Chat\ResponseMapper;
 use App\Services\Chat\TemplateRenderer;
@@ -17,7 +18,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Queued job: runs API action for an option click, then updates conversation context and posts bot message.
+ * Queued job: runs API action for an option click (block or step option), then updates context and posts bot message.
  */
 class RunApiActionJob implements ShouldQueue
 {
@@ -26,7 +27,8 @@ class RunApiActionJob implements ShouldQueue
     public function __construct(
         public readonly int $conversationId,
         public readonly int $optionId,
-        public readonly ?int $messageId = null
+        public readonly ?int $messageId = null,
+        public readonly string $optionSource = 'block'
     ) {}
 
     /**
@@ -38,7 +40,11 @@ class RunApiActionJob implements ShouldQueue
         if (! $conversation) {
             return;
         }
-        $option = BlockOption::with('endpoint', 'nextStep', 'nextStepOnFailure')->find($this->optionId);
+
+        $option = $this->optionSource === 'step'
+            ? StepOption::with('endpoint', 'nextStep', 'nextStepOnFailure')->find($this->optionId)
+            : BlockOption::with('endpoint', 'nextStep', 'nextStepOnFailure')->find($this->optionId);
+
         if (! $option) {
             return;
         }

@@ -102,17 +102,27 @@ class ChatController extends Controller
     }
 
     /**
-     * Click an option (button). Returns new messages and updated block or action_status.
+     * Click an option (button). Pass either option_id (block option) or step_option_id (step suggestion).
      */
     public function option(Request $request, Conversation $conversation): JsonResponse
     {
-        $request->validate(['option_id' => 'required|integer|exists:block_options,id']);
+        $request->validate([
+            'option_id' => 'required_without:step_option_id|nullable|integer|exists:block_options,id',
+            'step_option_id' => 'required_without:option_id|nullable|integer|exists:step_options,id',
+        ]);
+        if ($request->input('option_id') && $request->input('step_option_id')) {
+            return response()->json(['error' => 'Provide either option_id or step_option_id, not both.'], 422);
+        }
         $this->ensureConversationActive($conversation);
 
-        $result = $this->orchestrator->process($conversation, [
-            'input_type' => 'option_click',
-            'option_id' => (int) $request->input('option_id'),
-        ]);
+        $input = ['input_type' => 'option_click'];
+        if ($request->filled('step_option_id')) {
+            $input['step_option_id'] = (int) $request->input('step_option_id');
+        } else {
+            $input['option_id'] = (int) $request->input('option_id');
+        }
+
+        $result = $this->orchestrator->process($conversation, $input);
 
         return response()->json([
             'messages' => $result['messages'],
