@@ -45,6 +45,24 @@ class StepsRelationManager extends RelationManager
 
         return $form
             ->schema([
+                Section::make('AI module')
+                    ->description('Describe what you want this step to do; click "Generate step" to fill the fields from AI.')
+                    ->schema([
+                        Textarea::make('ai_step_description')
+                            ->label('What should this step do?')
+                            ->placeholder('e.g. Collect customer email and order number, then ask what they want to do: track order, cancel, or get help.')
+                            ->rows(4)
+                            ->columnSpanFull()
+                            ->live(),
+                        Placeholder::make('generate_step_ai_btn')
+                            ->label('')
+                            ->content(new HtmlString(
+                                '<button type="button" wire:click="generateStepWithAi" class="inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600">Generate step</button>'
+                            )),
+                    ])
+                    ->collapsible()
+                    ->collapsed(false)
+                    ->columnSpanFull(),
                 TextInput::make('key')->required()->maxLength(64),
                 Textarea::make('bot_message_template')
                     ->label('Bot message to customer')
@@ -342,5 +360,224 @@ class StepsRelationManager extends RelationManager
             ->body('Router prompt filled. You can edit it before saving.')
             ->success()
             ->send();
+    }
+
+    /**
+     * Generate step configuration from a free-text description using OpenRouter; fill the form.
+     */
+    public function generateStepWithAi(): void
+    {
+        try {
+            $client = app(OpenRouterClient::class);
+        } catch (\Throwable) {
+            Notification::make()
+                ->title('OpenRouter not configured')
+                ->body('Set your API token in Settings → OpenRouter.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        $state = $this->form->getState();
+        $description = trim((string) ($state['ai_step_description'] ?? ''));
+        if ($description === '') {
+            Notification::make()
+                ->title('Empty description')
+                ->body('Describe what you want this step to do.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        $flow = $this->getOwnerRecord();
+        $steps = $flow->steps()->orderBy('sort_order')->orderBy('id')->get();
+        $stepKeyToId = $steps->pluck('id', 'key')->all();
+        $stepKeysList = $steps->pluck('key')->implode(', ');
+        $blocks = Block::query()->get();
+        $blockKeyToId = $blocks->pluck('id', 'key')->all();
+        $blockKeysList = $blocks->map(fn ($b) => $b->key . ' (' . ($b->title ?? $b->key) . ')')->implode(', ');
+        $endpoints = Endpoint::query()->get();
+        $endpointNameToId = $endpoints->pluck('id', 'name')->all();
+        $endpointNamesList = $endpoints->pluck('name')->implode(', ');
+
+        $currentStepKey = $this->getMountedTableActionRecord()?->key;
+
+        $systemPrompt = <<<PROMPT
+You are a step designer for a customer support chat flow. Given a short description of what the step should do, output ONLY valid JSON (no markdown, no code fence). Use this exact structure:
+
+{
+  "key": "snake_case_step_key",
+  "bot_message_template": "One or two sentences the bot shows to the customer in English.",
+  "router_prompt": "Optional instructions for the AI router (or null).",
+  "transition_rules": [
+    { "intent": "keywords or intent", "target_step_key": "step_key or null", "target_block_key": "block_key or null" }
+  ],
+  "step_options": [
+    {
+      "label": "Button label",
+      "bot_reply": "Optional one-line reply when clicked",
+      "action_type": "API_CALL | NEXT_STEP | CONFIRM | HUMAN_HANDOFF | OPEN_URL | NO_OP | RUN_PROMPT",
+      "endpoint_name": "Only for API_CALL - use exact endpoint name from context",
+      "next_step_key": "For NEXT_STEP or API_CALL success - step key from context",
+      "next_step_on_failure_key": "For API_CALL - step key on failure",
+      "confirm_step_key": "Only for CONFIRM - step key for confirmation",
+      "success_template": "For API_CALL - optional",
+      "failure_template": "For API_CALL - optional",
+      "prompt_template": "For RUN_PROMPT only",
+      "payload_mapper": {},
+      "sort_order": 0
+    }
+  ]
+}
+
+Rules: Use only step keys, block keys, and endpoint names from the context provided. action_type must be one of: API_CALL, NEXT_STEP, CONFIRM, HUMAN_HANDOFF, OPEN_URL, NO_OP, RUN_PROMPT. Omit step_options if the step should have no suggestion buttons. Keep transition_rules and step_options arrays empty if not needed.
+PROMPT;
+
+        $userPrompt = sprintf(
+            "Flow name: %s. Existing step keys in this flow: %s. Block keys (key (title)): %s. Endpoint names: %s. Current step key (if editing): %s.\n\nUser description: %s",
+            $flow->name ?? 'Flow',
+            $stepKeysList ?: '(none yet)',
+            $blockKeysList ?: '(none)',
+            $endpointNamesList ?: '(none)',
+            $currentStepKey ?? '(new step)',
+            $description
+        );
+
+        $response = $client->chat(
+            [
+                ['role' => 'system', 'content' => $systemPrompt],
+                ['role' => 'user', 'content' => $userPrompt],
+            ],
+            ['max_tokens' => 1200]
+        );
+
+        $content = trim((string) ($response['content'] ?? ''));
+        if ($content === '') {
+            Notification::make()->title('No response from AI')->warning()->send();
+            return;
+        }
+
+        $json = $this->extractJsonFromAiResponse($content);
+        if ($json === null) {
+            Notification::make()
+                ->title('Invalid JSON')
+                ->body('Could not parse AI response. Try a shorter description.')
+                ->danger()
+                ->send();
+            return;
+        }
+
+        $fill = $this->mapAiStepToFormData($json, $stepKeyToId, $blockKeyToId, $endpointNameToId);
+        $isExistingStep = (bool) $this->getMountedTableActionRecord()?->getKey();
+
+        if (! $isExistingStep && isset($fill['stepOptions'])) {
+            unset($fill['stepOptions']);
+        }
+
+        $this->form->fill($fill);
+        Notification::make()
+            ->title('Step generated')
+            ->body('Fields have been filled. Edit and save as needed.')
+            ->success()
+            ->send();
+    }
+
+    private function extractJsonFromAiResponse(string $content): ?array
+    {
+        $content = trim($content);
+        if (preg_match('/```(?:json)?\s*([\s\S]*?)```/', $content, $m)) {
+            $content = trim($m[1]);
+        }
+        $decoded = json_decode($content, true);
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $json
+     * @param  array<string, int>  $stepKeyToId
+     * @param  array<string, int>  $blockKeyToId
+     * @param  array<string, int>  $endpointNameToId
+     * @return array<string, mixed>
+     */
+    private function mapAiStepToFormData(array $json, array $stepKeyToId, array $blockKeyToId, array $endpointNameToId): array
+    {
+        $fill = [];
+        if (isset($json['key']) && is_string($json['key'])) {
+            $fill['key'] = $json['key'];
+        }
+        if (isset($json['bot_message_template']) && is_string($json['bot_message_template'])) {
+            $fill['bot_message_template'] = $json['bot_message_template'];
+        }
+        if (array_key_exists('router_prompt', $json)) {
+            $fill['router_prompt'] = $json['router_prompt'] === null ? '' : (string) $json['router_prompt'];
+        }
+
+        $allowedNextStepIds = [];
+        if (isset($json['transition_rules']) && is_array($json['transition_rules'])) {
+            $fill['transition_rules'] = [];
+            foreach ($json['transition_rules'] as $rule) {
+                if (! is_array($rule)) {
+                    continue;
+                }
+                $intent = $rule['intent'] ?? '';
+                $targetStepKey = $rule['target_step_key'] ?? null;
+                $targetBlockKey = $rule['target_block_key'] ?? null;
+                if ($targetStepKey !== null && isset($stepKeyToId[$targetStepKey])) {
+                    $allowedNextStepIds[$stepKeyToId[$targetStepKey]] = true;
+                }
+                $fill['transition_rules'][] = [
+                    'intent' => $intent,
+                    'target_step_key' => $targetStepKey,
+                    'target_block_key' => $targetBlockKey,
+                ];
+            }
+        }
+
+        if (isset($json['step_options']) && is_array($json['step_options'])) {
+            $fill['stepOptions'] = [];
+            foreach ($json['step_options'] as $i => $opt) {
+                if (! is_array($opt)) {
+                    continue;
+                }
+                $mapped = [
+                    'label' => $opt['label'] ?? 'Option',
+                    'bot_reply' => $opt['bot_reply'] ?? null,
+                    'action_type' => $opt['action_type'] ?? ChatConstants::ACTION_TYPE_NO_OP,
+                    'endpoint_id' => null,
+                    'payload_mapper' => $opt['payload_mapper'] ?? null,
+                    'success_template' => $opt['success_template'] ?? null,
+                    'failure_template' => $opt['failure_template'] ?? null,
+                    'next_step_id' => null,
+                    'next_step_on_failure_id' => null,
+                    'confirm_step_id' => null,
+                    'prompt_template' => $opt['prompt_template'] ?? null,
+                    'sort_order' => (int) ($opt['sort_order'] ?? $i),
+                ];
+                $endpointName = $opt['endpoint_name'] ?? null;
+                if (is_string($endpointName) && isset($endpointNameToId[$endpointName])) {
+                    $mapped['endpoint_id'] = $endpointNameToId[$endpointName];
+                }
+                $nextKey = $opt['next_step_key'] ?? null;
+                if (is_string($nextKey) && isset($stepKeyToId[$nextKey])) {
+                    $mapped['next_step_id'] = $stepKeyToId[$nextKey];
+                    $allowedNextStepIds[$stepKeyToId[$nextKey]] = true;
+                }
+                $failureKey = $opt['next_step_on_failure_key'] ?? null;
+                if (is_string($failureKey) && isset($stepKeyToId[$failureKey])) {
+                    $mapped['next_step_on_failure_id'] = $stepKeyToId[$failureKey];
+                }
+                $confirmKey = $opt['confirm_step_key'] ?? null;
+                if (is_string($confirmKey) && isset($stepKeyToId[$confirmKey])) {
+                    $mapped['confirm_step_id'] = $stepKeyToId[$confirmKey];
+                }
+                $fill['stepOptions'][] = $mapped;
+            }
+        }
+
+        if ($allowedNextStepIds !== []) {
+            $fill['allowed_next_step_ids'] = array_keys($allowedNextStepIds);
+        }
+
+        return $fill;
     }
 }
