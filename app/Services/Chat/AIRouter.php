@@ -33,7 +33,7 @@ final class AIRouter
         $routerPrompt = $flow->router_prompt ?? 'Given the user message, respond with JSON: intent, target_block_key, target_step_key, confidence (0-1), reason, customer_message (short English), require_confirmation, variables (object).';
         $userContent = $routerPrompt."\n\nUser message: ".$customerMessage->content;
 
-        $model = $flow->default_model ?? config('openrouter.default_model');
+        $model = $flow->default_model ?? OpenRouterClient::getDefaultModel();
         $messages = [
             ['role' => 'system', 'content' => $systemPrompt],
             ['role' => 'user', 'content' => $userContent],

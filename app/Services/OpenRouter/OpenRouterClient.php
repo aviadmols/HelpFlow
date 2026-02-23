@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\OpenRouter;
 
+use App\Models\Setting;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -26,7 +27,7 @@ final class OpenRouterClient
      */
     public function chat(array $messages, array $options = []): array
     {
-        $model = $options['model'] ?? config('openrouter.default_model');
+        $model = $options['model'] ?? self::getDefaultModel();
         $payload = [
             'model' => $model,
             'messages' => $messages,
@@ -72,13 +73,28 @@ final class OpenRouterClient
     }
 
     /**
-     * Create client from config. Uses OPENROUTER_* env when no args passed.
+     * Effective default model: admin setting overrides .env when set.
+     */
+    public static function getDefaultModel(): string
+    {
+        $fromSetting = Setting::get('openrouter_default_model');
+        if ($fromSetting !== null && $fromSetting !== '') {
+            return $fromSetting;
+        }
+
+        return config('openrouter.default_model', 'openai/gpt-4o-mini');
+    }
+
+    /**
+     * Create client from config. API key: admin setting overrides .env when set.
      */
     public static function fromConfig(?string $apiKey = null, ?string $baseUrl = null): self
     {
+        $resolvedKey = $apiKey ?? Setting::get('openrouter_api_key') ?? config('openrouter.api_key', '');
+
         return new self(
             $baseUrl ?? config('openrouter.base_url'),
-            $apiKey ?? config('openrouter.api_key'),
+            $resolvedKey,
             (int) config('openrouter.timeout_sec', 30)
         );
     }

@@ -63,4 +63,31 @@ class BlockOption extends Model
     {
         return $this->hasMany(ActionRun::class);
     }
+
+    /**
+     * Human-readable summary of what this option triggers (for admin table).
+     */
+    public function getTriggersSummaryAttribute(): string
+    {
+        switch ($this->action_type) {
+            case 'API_CALL':
+                return $this->endpoint_id
+                    ? 'Endpoint: '.($this->endpoint?->name ?? '#'.$this->endpoint_id)
+                    : '— No endpoint —';
+            case 'NEXT_STEP':
+                return $this->next_step_id
+                    ? 'Step: '.($this->nextStep?->key ?? '#'.$this->next_step_id)
+                    : '— No step —';
+            case 'CONFIRM':
+                return $this->confirm_step_id
+                    ? 'Confirm step: '.($this->confirmStep?->key ?? '#'.$this->confirm_step_id)
+                    : '— No step —';
+            case 'HUMAN_HANDOFF':
+                return 'Handoff to agent';
+            case 'OPEN_URL':
+            case 'NO_OP':
+            default:
+                return '—';
+        }
+    }
 }

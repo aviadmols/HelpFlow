@@ -1,5 +1,19 @@
 # HelpFlow – Deployment Notes
 
+## PHP and Composer
+
+- **PHP**: 8.3 or 8.4. The lock file is resolved for PHP 8.3.30 (`config.platform.php` in `composer.json`).
+- **Required extensions**: `intl`, `zip`. For Horizon on Linux: `pcntl`, `posix` (not available on Windows; in some Docker images they may be missing).
+- Install dependencies:
+  ```bash
+  composer install --optimize-autoloader --no-dev --no-scripts --no-interaction
+  ```
+  If the server has no `pcntl`/`posix` (e.g. minimal Docker), run:
+  ```bash
+  composer install --optimize-autoloader --no-dev --no-scripts --no-interaction --ignore-platform-req=ext-pcntl --ignore-platform-req=ext-posix
+  ```
+  In that case run the queue with `php artisan queue:work` instead of Horizon, or use an image that includes the extensions.
+
 ## Environment (.env)
 
 - Set `APP_ENV=production`, `APP_DEBUG=false`, and a strong `APP_KEY`.
