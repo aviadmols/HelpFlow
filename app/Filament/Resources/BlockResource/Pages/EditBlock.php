@@ -14,6 +14,17 @@ class EditBlock extends EditRecord
     protected static string $resource = BlockResource::class;
 
     /**
+     * Ensure sort_order is never null before save (DB not-null constraint).
+     */
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        if (! isset($data['sort_order']) || $data['sort_order'] === null || $data['sort_order'] === '') {
+            $data['sort_order'] = 0;
+        }
+        return $data;
+    }
+
+    /**
      * Call OpenRouter to suggest a block message template from title/key; fill the form field.
      */
     public function suggestMessageWithAi(): void

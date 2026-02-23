@@ -38,7 +38,10 @@ class BlockResource extends Resource
                         '<button type="button" wire:click="suggestMessageWithAi" class="inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600">Suggest message with AI</button>'
                     )),
                 KeyValue::make('display_rules'),
-                TextInput::make('sort_order')->numeric()->default(0),
+                TextInput::make('sort_order')
+                    ->numeric()
+                    ->default(0)
+                    ->dehydrateStateUsing(fn ($state) => $state !== null && $state !== '' ? (int) $state : 0),
             ]);
     }
 
