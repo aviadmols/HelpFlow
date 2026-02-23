@@ -63,7 +63,7 @@ class StepsRelationManager extends RelationManager
         if (! isset($prompts[$key])) {
             return;
         }
-        $form = $this->form();
+        $form = $this->getMountedTableActionForm() ?? $this->form();
         $state = $form->getState();
         $state['ai_step_description'] = $prompts[$key];
         $form->fill($state);
@@ -392,7 +392,7 @@ class StepsRelationManager extends RelationManager
             return;
         }
 
-        $form = $this->form();
+        $form = $this->getMountedTableActionForm() ?? $this->form();
         $state = $form->getState();
         $stepKey = $state['key'] ?? 'this step';
 
@@ -437,7 +437,7 @@ class StepsRelationManager extends RelationManager
             return;
         }
 
-        $form = $this->form();
+        $form = $this->getMountedTableActionForm() ?? $this->form();
         $state = $form->getState();
         $stepKey = $state['key'] ?? 'this step';
         $allowedBlocks = $state['allowed_block_ids'] ?? [];
@@ -495,7 +495,7 @@ class StepsRelationManager extends RelationManager
             return;
         }
 
-        $form = $this->form();
+        $form = $this->getMountedTableActionForm() ?? $this->form();
         $state = $form->getState();
         $description = trim((string) ($state['ai_step_description'] ?? ''));
         if ($description === '') {
