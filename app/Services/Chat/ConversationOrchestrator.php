@@ -62,9 +62,16 @@ final class ConversationOrchestrator
         $conversation->save();
 
         $block = $this->blockPresenter->findBlockByKey($conversation->tenant_id, $result->targetBlockKey);
+        $step = $conversation->currentStep;
+        if ($block && $step && is_array($step->allowed_block_ids) && $step->allowed_block_ids !== [] && ! in_array($block->id, $step->allowed_block_ids, true)) {
+            $block = $this->blockPresenter->resolveBlockForConversation($conversation);
+        }
+        if (! $block) {
+            $block = $this->blockPresenter->resolveBlockForConversation($conversation);
+        }
         if ($block) {
             $botContent = $result->customerMessage;
-            $botMessage = Message::create([
+            Message::create([
                 'conversation_id' => $conversation->id,
                 'role' => ChatConstants::MESSAGE_ROLE_BOT,
                 'content' => $botContent,

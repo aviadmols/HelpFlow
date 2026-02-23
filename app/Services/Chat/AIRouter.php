@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Chat;
 
+use App\Models\Block;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\OpenRouter\OpenRouterClient;
@@ -12,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * AI router: sends user message to OpenRouter, parses strict JSON response, validates schema, stores telemetry.
- * On parse/validation failure or low confidence returns fallback to main_menu.
+ * Uses step-level prompts and fallback when set; otherwise flow/global fallback.
  */
 final class AIRouter
 {
@@ -29,11 +30,31 @@ final class AIRouter
     public function route(Conversation $conversation, Message $customerMessage): array
     {
         $flow = $conversation->flow;
-        $systemPrompt = $flow->system_prompt ?? 'You are a support chat router. Output only valid JSON.';
-        $routerPrompt = $flow->router_prompt ?? 'Given the user message, respond with JSON: intent, target_block_key, target_step_key, confidence (0-1), reason, customer_message (short English), require_confirmation, variables (object).';
-        $userContent = $routerPrompt."\n\nUser message: ".$customerMessage->content;
+        $step = $conversation->currentStep;
 
-        $model = $flow->default_model ?? OpenRouterClient::getDefaultModel();
+        $systemPrompt = $step?->system_prompt ?? $flow->system_prompt ?? 'You are a support chat router. Output only valid JSON.';
+        $routerPrompt = $step?->router_prompt ?? $flow->router_prompt ?? 'Given the user message, respond with JSON: intent, target_block_key, target_step_key, confidence (0-1), reason, customer_message (short English), require_confirmation, variables (object).';
+
+        $allowedBlockKeys = [];
+        if ($step && ! empty($step->allowed_block_ids)) {
+            $allowedBlockKeys = Block::query()
+                ->whereIn('id', $step->allowed_block_ids)
+                ->pluck('key')
+                ->all();
+        }
+        $allowedStepKeys = $flow->steps()->pluck('key')->all();
+
+        $constraints = '';
+        if ($allowedBlockKeys !== []) {
+            $constraints .= "\nAllowed target_block_key values (use only one of these): ".implode(', ', $allowedBlockKeys).'.';
+        }
+        if ($allowedStepKeys !== []) {
+            $constraints .= "\nAllowed target_step_key values (optional, use only one of these or null): ".implode(', ', $allowedStepKeys).'.';
+        }
+
+        $userContent = $routerPrompt.$constraints."\n\nUser message: ".$customerMessage->content;
+
+        $model = $step?->ai_model_override ?? $flow->default_model ?? OpenRouterClient::getDefaultModel();
         $messages = [
             ['role' => 'system', 'content' => $systemPrompt],
             ['role' => 'user', 'content' => $userContent],
@@ -45,7 +66,8 @@ final class AIRouter
         $content = $response['content'] ?? null;
         $usage = $response['usage'] ?? null;
 
-        $result = $this->parseAndValidate($content);
+        $stepFallbackBlockKey = $step?->fallbackBlock?->key ?? $this->fallbackBlockKey;
+        $result = $this->parseAndValidate($content, $stepFallbackBlockKey);
         $telemetry = $this->storeTelemetry($conversation, $customerMessage, $result, $content, $model, $usage);
 
         return ['result' => $result, 'telemetry' => $telemetry];
@@ -53,12 +75,14 @@ final class AIRouter
 
     /**
      * Parse JSON content and validate schema. Returns fallback result if invalid.
+     * Uses stepFallbackBlockKey when confidence is low or parse fails (step-level fallback when provided).
      */
-    private function parseAndValidate(?string $content): RouterResult
+    private function parseAndValidate(?string $content, string $stepFallbackBlockKey = null): RouterResult
     {
+        $fallbackKey = $stepFallbackBlockKey ?? $this->fallbackBlockKey;
         $fallback = new RouterResult(
             intent: 'unknown',
-            targetBlockKey: $this->fallbackBlockKey,
+            targetBlockKey: $fallbackKey,
             targetStepKey: null,
             confidence: 0.0,
             reason: ChatConstants::ROUTER_FALLBACK_REASON,
@@ -78,13 +102,13 @@ final class AIRouter
 
         $targetBlockKey = isset($decoded['target_block_key']) && is_string($decoded['target_block_key'])
             ? $decoded['target_block_key']
-            : $this->fallbackBlockKey;
+            : $fallbackKey;
         $confidence = isset($decoded['confidence']) && is_numeric($decoded['confidence'])
             ? (float) $decoded['confidence']
             : 0.0;
 
         if ($confidence < 0.5) {
-            $targetBlockKey = $this->fallbackBlockKey;
+            $targetBlockKey = $fallbackKey;
         }
 
         return new RouterResult(

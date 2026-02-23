@@ -1,20 +1,35 @@
 # HelpFlow – Deployment Notes
 
-## Railway (Railpack)
+## Railway (Railpack or Dockerfile)
 
-When deploying to **Railway** with Railpack, the build installs only a default set of PHP extensions. HelpFlow needs **intl** and **zip** (and **pcntl** for Horizon).
+When deploying to **Railway**, the build can fail because **ext-pcntl** (required by Laravel Horizon) is not available in the Railpack PHP image. Use one of the options below.
 
-**Fix: set a build variable in your Railway project**
+### Option A: Railpack with custom install command (recommended)
 
-1. In Railway: open your project → **Variables** (or **Settings** → Variables).
-2. Add a **build-time** variable (so it’s available during the build, not only at runtime):
-   - **Name:** `RAILPACK_PHP_EXTENSIONS`
-   - **Value:** `intl,zip,pcntl`
-3. Redeploy. Railpack will install these extensions before running `composer install`.
+1. In Railway: **Variables** → add a **build-time** variable:
+   - **Name:** `RAILPACK_PHP_EXTENSIONS`  
+   - **Value:** `intl,zip`
+2. Add a second build variable so the install step runs composer with ignore flags and then npm:
+   - **Name:** `RAILPACK_INSTALL_CMD`
+   - **Value:**  
+     `composer install --optimize-autoloader --no-scripts --no-interaction --ignore-platform-req=ext-pcntl --ignore-platform-req=ext-posix && npm install && npm prune --omit=dev --ignore-scripts`
+3. Redeploy.
 
-If **pcntl** is not available (FrankenPHP/Railpack often does not include it), the project includes a **railpack.json** that runs `composer install` with `--ignore-platform-req=ext-pcntl --ignore-platform-req=ext-posix`, so the build succeeds. On that runtime you **cannot** run `php artisan horizon`; use **`php artisan queue:work`** (or a similar worker) for the queue instead.
+On that runtime do **not** run `php artisan horizon`; use **`php artisan queue:work`** for the queue.
 
-The project also declares `ext-intl` and `ext-zip` in `composer.json` so that Railpack installs them; set `RAILPACK_PHP_EXTENSIONS=intl,zip` if needed.
+### Option B: Use the Dockerfile (if Option A still fails)
+
+The repo includes a **Dockerfile** that runs `composer install` with `--ignore-platform-req=ext-pcntl --ignore-platform-req=ext-posix` and builds the frontend. Railway can use it if you select **Dockerfile** as the build method (or if it auto-detects the Dockerfile).
+
+- **Build:** Docker build (no Railpack).
+- **Start command:** `php artisan serve --host=0.0.0.0 --port=${PORT}` (or set in Railway). Run migrations via a one-off job or in your start script.
+- **Queue:** Run `php artisan queue:work` in a separate service/process (Horizon is not used in this image).
+
+### Summary
+
+- Set **RAILPACK_PHP_EXTENSIONS** = `intl,zip` so intl and zip are installed.
+- Set **RAILPACK_INSTALL_CMD** as above so the install step succeeds without pcntl.
+- Or switch to **Dockerfile** and deploy with Docker.
 
 ## PHP and Composer
 
