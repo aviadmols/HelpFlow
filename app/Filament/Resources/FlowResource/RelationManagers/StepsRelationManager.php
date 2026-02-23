@@ -20,6 +20,9 @@ use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Tables\Actions\CreateAction;
+use Filament\Tables\Actions\DeleteAction;
+use Filament\Tables\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Support\HtmlString;
@@ -215,6 +218,13 @@ class StepsRelationManager extends RelationManager
         return $table
             ->recordTitleAttribute('key')
             ->reorderable('sort_order')
+            ->headerActions([
+                CreateAction::make()->label('New step'),
+            ])
+            ->actions([
+                EditAction::make()->label('Edit'),
+                DeleteAction::make()->label('Delete'),
+            ])
             ->columns([
                 TextColumn::make('key'),
                 TextColumn::make('bot_message_template')->limit(40),
