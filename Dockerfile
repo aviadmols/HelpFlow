@@ -1,6 +1,17 @@
 # HelpFlow – production Docker image (PHP 8.3, intl/zip; composer install ignores pcntl).
 # Use this if Railpack fails (e.g. pcntl not available). Run queue with: php artisan queue:work
 
+# Stage 1: build frontend with Node 22 (apt node is too old for Vite 7 / Tailwind 4)
+FROM node:22-alpine AS frontend
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm ci 2>/dev/null || npm install
+COPY vite.config.js ./
+COPY resources ./resources
+COPY public ./public
+RUN npm run build
+
+# Stage 2: PHP app
 FROM php:8.3-bookworm AS base
 
 # Install system deps + PHP extensions (intl, zip, pdo_pgsql; no pcntl)
@@ -26,12 +37,10 @@ RUN composer install --no-dev --no-scripts --no-interaction \
 # App code (vendor excluded via .dockerignore)
 COPY . .
 
-RUN php artisan package:discover --ansi
+# Bring in built frontend assets from Node stage
+COPY --from=frontend /app/public/build ./public/build
 
-# Node for frontend build (no package-lock.json: use npm install)
-RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
-    && npm install && npm run build \
-    && rm -rf node_modules && apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN php artisan package:discover --ansi
 
 # Railway / Cloud: listen on PORT
 ENV PORT=8000
