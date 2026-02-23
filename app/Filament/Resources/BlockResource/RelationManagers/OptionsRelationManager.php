@@ -38,7 +38,7 @@ class OptionsRelationManager extends RelationManager
                     ->options(collect(ChatConstants::actionTypes())->mapWithKeys(fn ($v) => [$v => $v])->all())
                     ->required()
                     ->live()
-                    ->helperText('Choose what runs when this option is clicked: Endpoint, Step, Confirm step, or Handoff.'),
+                    ->helperText('Choose what runs: Endpoint, Step, Confirm step, Handoff, or AI prompt (ChatGPT/OpenRouter).'),
                 Select::make('endpoint_id')
                     ->label('Endpoint')
                     ->relationship('endpoint', 'name')
@@ -61,8 +61,8 @@ class OptionsRelationManager extends RelationManager
                     ->searchable()
                     ->required(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_NEXT_STEP)
                     ->nullable()
-                    ->visible(fn (Get $get) => in_array($get('action_type'), [ChatConstants::ACTION_TYPE_API_CALL, ChatConstants::ACTION_TYPE_NEXT_STEP], true))
-                    ->helperText('For API_CALL: step after success. For NEXT_STEP: step to go to.'),
+                    ->visible(fn (Get $get) => in_array($get('action_type'), [ChatConstants::ACTION_TYPE_API_CALL, ChatConstants::ACTION_TYPE_NEXT_STEP, ChatConstants::ACTION_TYPE_RUN_PROMPT], true))
+                    ->helperText('For API_CALL: step after success. For NEXT_STEP: step to go to. For RUN_PROMPT: optional step after showing AI response.'),
                 Select::make('next_step_on_failure_id')
                     ->label('Next step on failure')
                     ->options(fn () => $this->stepOptions())
@@ -77,6 +77,14 @@ class OptionsRelationManager extends RelationManager
                     ->nullable()
                     ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_CONFIRM)
                     ->helperText('Step that asks the user to confirm (e.g. Yes/No).'),
+                Textarea::make('prompt_template')
+                    ->label('AI prompt (ChatGPT/OpenRouter)')
+                    ->rows(4)
+                    ->required(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_RUN_PROMPT)
+                    ->nullable()
+                    ->visible(fn (Get $get) => $get('action_type') === ChatConstants::ACTION_TYPE_RUN_PROMPT)
+                    ->placeholder('e.g. Explain in one short sentence what the user can do with their subscription. Customer name: {{customer.name}}')
+                    ->helperText('Prompt sent to the AI. Use {{variable}} from conversation context. Response is shown to the user.'),
                 TextInput::make('sort_order')->label('Sort order')->numeric()->default(0),
             ]);
     }

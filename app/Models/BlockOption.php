@@ -17,7 +17,7 @@ class BlockOption extends Model
         'block_id', 'label', 'action_type', 'endpoint_id',
         'payload_mapper', 'success_template', 'failure_template',
         'next_step_id', 'next_step_on_failure_id', 'confirm_step_id',
-        'retry_policy', 'sort_order',
+        'prompt_template', 'retry_policy', 'sort_order',
     ];
 
     protected function casts(): array
@@ -84,6 +84,10 @@ class BlockOption extends Model
                     : '— No step —';
             case 'HUMAN_HANDOFF':
                 return 'Handoff to agent';
+            case 'RUN_PROMPT':
+                return $this->prompt_template
+                    ? 'AI prompt: '.\Illuminate\Support\Str::limit($this->prompt_template, 30)
+                    : '— No prompt —';
             case 'OPEN_URL':
             case 'NO_OP':
             default:

@@ -23,6 +23,9 @@ final class ChatConstants
 
     public const ACTION_TYPE_NO_OP = 'NO_OP';
 
+    /** Run an AI prompt via OpenRouter/ChatGPT; response shown to user and optionally stored in context. */
+    public const ACTION_TYPE_RUN_PROMPT = 'RUN_PROMPT';
+
     // Message roles
     public const MESSAGE_ROLE_CUSTOMER = 'customer';
 
@@ -101,6 +104,7 @@ final class ChatConstants
             self::ACTION_TYPE_HUMAN_HANDOFF,
             self::ACTION_TYPE_OPEN_URL,
             self::ACTION_TYPE_NO_OP,
+            self::ACTION_TYPE_RUN_PROMPT,
         ];
     }
 

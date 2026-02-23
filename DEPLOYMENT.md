@@ -1,18 +1,50 @@
 # HelpFlow – Deployment Notes
 
+## Railway (Railpack)
+
+When deploying to **Railway** with Railpack, the build installs only a default set of PHP extensions. HelpFlow needs **intl** and **zip** (and **pcntl** for Horizon).
+
+**Fix: set a build variable in your Railway project**
+
+1. In Railway: open your project → **Variables** (or **Settings** → Variables).
+2. Add a **build-time** variable (so it’s available during the build, not only at runtime):
+   - **Name:** `RAILPACK_PHP_EXTENSIONS`
+   - **Value:** `intl,zip,pcntl`
+3. Redeploy. Railpack will install these extensions before running `composer install`.
+
+If **pcntl** is not available in the Railpack image, use only `intl,zip`. Then run the queue with `php artisan queue:work` instead of Horizon, or add `--ignore-platform-req=ext-pcntl --ignore-platform-req=ext-posix` to the Composer install step (e.g. via a custom build script) and use `queue:work`.
+
+The project also declares `ext-intl` and `ext-zip` in `composer.json` so that Railpack can pick them up; if your Railpack version uses that, the variable above may be redundant for intl/zip.
+
 ## PHP and Composer
 
 - **PHP**: 8.3 or 8.4. The lock file is resolved for PHP 8.3.30 (`config.platform.php` in `composer.json`).
-- **Required extensions**: `intl`, `zip`. For Horizon on Linux: `pcntl`, `posix` (not available on Windows; in some Docker images they may be missing).
-- Install dependencies:
-  ```bash
-  composer install --optimize-autoloader --no-dev --no-scripts --no-interaction
-  ```
-  If the server has no `pcntl`/`posix` (e.g. minimal Docker), run:
-  ```bash
-  composer install --optimize-autoloader --no-dev --no-scripts --no-interaction --ignore-platform-req=ext-pcntl --ignore-platform-req=ext-posix
-  ```
-  In that case run the queue with `php artisan queue:work` instead of Horizon, or use an image that includes the extensions.
+- **Required extensions** (without them `composer install` fails on the server):
+  - **ext-intl** – required by Filament (admin UI). Install or enable on the server.
+  - **ext-zip** – required by openspout/Filament (exports). Install or enable on the server.
+  - **ext-pcntl**, **ext-posix** – required by Laravel Horizon (queue). Not available on Windows; some Docker images omit them. If you cannot install them, use the ignore flags below and run `php artisan queue:work` instead of Horizon.
+
+### If deploy fails with "ext-intl / ext-zip / ext-pcntl missing"
+
+1. **Install extensions on the server (recommended)**  
+   - **Ubuntu/Debian**: `sudo apt-get install -y php8.3-intl php8.3-zip` (and for Horizon: `php8.3-pcntl` if available).  
+   - **Docker (Dockerfile)**: `RUN docker-php-ext-install intl zip pcntl` (or your PHP image’s equivalent).  
+   - **Alpine**: `apk add php81-intl php81-zip` (and pcntl if needed).  
+   Then run:
+   ```bash
+   composer install --optimize-autoloader --no-dev --no-scripts --no-interaction
+   ```
+
+2. **If you cannot install pcntl/posix** (e.g. minimal Docker), install intl and zip as above, then run Composer ignoring only the process extensions:
+   ```bash
+   composer install --optimize-autoloader --no-dev --no-scripts --no-interaction --ignore-platform-req=ext-pcntl --ignore-platform-req=ext-posix
+   ```
+   Use `php artisan queue:work` instead of `php artisan horizon` on that server.
+
+3. **Temporary workaround (all extensions ignored)** – only if you cannot install intl/zip (Filament and exports may break):
+   ```bash
+   composer install --optimize-autoloader --no-dev --no-scripts --no-interaction --ignore-platform-req=ext-intl --ignore-platform-req=ext-pcntl --ignore-platform-req=ext-zip
+   ```
 
 ## Environment (.env)
 

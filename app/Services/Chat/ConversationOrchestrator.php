@@ -8,6 +8,7 @@ use App\Jobs\RunApiActionJob;
 use App\Models\BlockOption;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Services\OpenRouter\OpenRouterClient;
 use App\Support\ChatConstants;
 use Illuminate\Support\Facades\Log;
 
@@ -161,6 +162,10 @@ final class ConversationOrchestrator
             ];
         }
 
+        if ($option->action_type === ChatConstants::ACTION_TYPE_RUN_PROMPT) {
+            return $this->processRunPrompt($conversation, $option);
+        }
+
         if ($option->action_type === ChatConstants::ACTION_TYPE_NEXT_STEP || $option->action_type === ChatConstants::ACTION_TYPE_CONFIRM) {
             $nextStep = $option->nextStep ?? $option->confirmStep;
             if ($nextStep) {
@@ -193,6 +198,57 @@ final class ConversationOrchestrator
 
         return [
             'messages' => $messages,
+            'block' => $presented,
+            'action_status' => null,
+        ];
+    }
+
+    /**
+     * Process RUN_PROMPT: render prompt template, call OpenRouter (ChatGPT), show response, optionally go to next step.
+     *
+     * @return array{messages: array, block: array, action_status: ?array}
+     */
+    private function processRunPrompt(Conversation $conversation, BlockOption $option): array
+    {
+        $promptTemplate = $option->prompt_template ?? '';
+        if ($promptTemplate === '') {
+            return $this->fallbackResponse($conversation, 'This action is not configured. Please set an AI prompt.');
+        }
+
+        $context = $conversation->getContextArray();
+        $userPrompt = $this->renderer->render($promptTemplate, $context);
+
+        $client = OpenRouterClient::fromConfig();
+        $messages = [
+            ['role' => 'system', 'content' => 'You are a helpful support assistant. Reply in a short, clear way in English. No markdown.'],
+            ['role' => 'user', 'content' => $userPrompt],
+        ];
+        $response = $client->chat($messages);
+        $content = trim((string) ($response['content'] ?? ''));
+        if ($content === '') {
+            $content = 'I could not generate a response right now. Please try again or choose another option.';
+        }
+
+        $context['last_prompt_response'] = $content;
+        $conversation->setContextArray($context);
+        $conversation->save();
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => ChatConstants::MESSAGE_ROLE_BOT,
+            'content' => $content,
+            'message_type' => ChatConstants::MESSAGE_TYPE_TEXT,
+        ]);
+
+        if ($option->next_step_id) {
+            $conversation->update(['current_step_id' => $option->next_step_id]);
+        }
+
+        $presented = $this->blockPresenter->present($conversation->fresh());
+        $messagesOut = $this->formatMessagesForResponse($conversation, 2);
+
+        return [
+            'messages' => $messagesOut,
             'block' => $presented,
             'action_status' => null,
         ];

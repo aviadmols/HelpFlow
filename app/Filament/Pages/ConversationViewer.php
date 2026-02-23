@@ -17,16 +17,17 @@ class ConversationViewer extends Page
 
     public ?Conversation $conversation = null;
 
-    public function mount(int $conversation): void
+    public function mount(Conversation $conversation): void
     {
-        $this->conversation = Conversation::with([
+        $conversation->load([
             'messages',
             'actionRuns.endpoint',
             'actionRuns.blockOption',
             'aiTelemetry',
             'customer',
             'flow',
-        ])->findOrFail($conversation);
+        ]);
+        $this->conversation = $conversation;
     }
 
     public static function getRoutePath(): string
