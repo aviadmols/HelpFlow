@@ -6,9 +6,11 @@ namespace App\Filament\Resources;
 
 use App\Models\Endpoint;
 use Filament\Forms\Components\KeyValue;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
+use Illuminate\Support\HtmlString;
 use Filament\Resources\Resource;
 use Filament\Tables\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
@@ -32,6 +34,11 @@ class EndpointResource extends Resource
                 TextInput::make('url')->required()->url()->maxLength(512),
                 TextInput::make('timeout_sec')->numeric()->default(30),
                 TextInput::make('retries')->numeric()->default(0),
+                Placeholder::make('suggest_mappers_ai')
+                    ->label('')
+                    ->content(new HtmlString(
+                        '<button type="button" wire:click="suggestMappersWithAi" class="inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600">Suggest mappers with AI</button>'
+                    )),
                 KeyValue::make('request_mapper')->keyLabel('Variable')->valueLabel('Source (e.g. context.field)'),
                 KeyValue::make('response_mapper')->keyLabel('Variable')->valueLabel('JSON path (e.g. discount.code)'),
             ]);

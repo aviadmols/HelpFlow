@@ -7,9 +7,11 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\BlockResource\RelationManagers\OptionsRelationManager;
 use App\Models\Block;
 use Filament\Forms\Components\KeyValue;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
+use Illuminate\Support\HtmlString;
 use Filament\Resources\Resource;
 use Filament\Tables\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
@@ -29,7 +31,12 @@ class BlockResource extends Resource
             ->schema([
                 TextInput::make('key')->required()->maxLength(64)->unique(ignoreRecord: true),
                 TextInput::make('title')->required()->maxLength(255),
-                Textarea::make('message_template')->rows(3),
+                Textarea::make('message_template')->rows(3)->label('Message template'),
+                Placeholder::make('suggest_message_ai')
+                    ->label('')
+                    ->content(new HtmlString(
+                        '<button type="button" wire:click="suggestMessageWithAi" class="inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600">Suggest message with AI</button>'
+                    )),
                 KeyValue::make('display_rules'),
                 TextInput::make('sort_order')->numeric()->default(0),
             ]);
