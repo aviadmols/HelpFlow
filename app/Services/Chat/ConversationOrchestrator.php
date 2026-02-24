@@ -7,8 +7,9 @@ namespace App\Services\Chat;
 use App\Jobs\RunApiActionJob;
 use App\Models\BlockOption;
 use App\Models\Conversation;
-use App\Models\StepOption;
 use App\Models\Message;
+use App\Models\Step;
+use App\Models\StepOption;
 use App\Services\OpenRouter\OpenRouterClient;
 use App\Support\ChatConstants;
 use Illuminate\Support\Facades\Log;
@@ -22,7 +23,8 @@ final class ConversationOrchestrator
         private readonly BlockPresenter $blockPresenter,
         private readonly AIRouter $router,
         private readonly TemplateRenderer $renderer,
-        private readonly ActionRunner $actionRunner
+        private readonly ActionRunner $actionRunner,
+        private readonly StepGoalHandler $stepGoalHandler
     ) {}
 
     /**
@@ -66,6 +68,11 @@ final class ConversationOrchestrator
             'content' => $messageText,
             'message_type' => ChatConstants::MESSAGE_TYPE_TEXT,
         ]);
+
+        $step = $conversation->fresh()->currentStep;
+        if ($step && trim((string) $step->goal) !== '') {
+            return $this->processFreeTextGoalMode($conversation, $step, $customerMessage, $messageText);
+        }
 
         $route = $this->router->route($conversation, $customerMessage);
         $result = $route['result'];
@@ -113,6 +120,50 @@ final class ConversationOrchestrator
             $presented = $this->blockPresenter->present($conversation, $block);
         } else {
             $presented = $this->blockPresenter->present($conversation);
+        }
+
+        $messages = $this->formatMessagesForResponse($conversation, 2);
+
+        return [
+            'messages' => $messages,
+            'block' => $presented,
+            'action_status' => null,
+        ];
+    }
+
+    /**
+     * Process free-text when the current step has a goal. AI drives the conversation until goal is achieved.
+     *
+     * @return array{messages: array, block: array, action_status: ?array}
+     */
+    private function processFreeTextGoalMode(Conversation $conversation, Step $step, Message $customerMessage, string $messageText): array
+    {
+        $outcome = $this->stepGoalHandler->handle($conversation, $step, $messageText);
+
+        $ctx = $conversation->getContextArray();
+        foreach ($outcome['variables'] as $k => $v) {
+            if ($v !== null && $v !== '') {
+                $ctx[$k] = $v;
+            }
+        }
+        $conversation->setContextArray($ctx);
+
+        if ($outcome['goal_achieved'] && $step->next_step_id_when_goal_achieved) {
+            $conversation->current_step_id = $step->next_step_id_when_goal_achieved;
+        }
+        $conversation->save();
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => ChatConstants::MESSAGE_ROLE_BOT,
+            'content' => $outcome['bot_message'],
+            'message_type' => ChatConstants::MESSAGE_TYPE_TEXT,
+        ]);
+
+        $conversation->refresh();
+        $presented = $this->blockPresenter->present($conversation);
+        if ($conversation->last_presented_block_key !== $presented['block_key']) {
+            $conversation->update(['last_presented_block_key' => $presented['block_key']]);
         }
 
         $messages = $this->formatMessagesForResponse($conversation, 2);

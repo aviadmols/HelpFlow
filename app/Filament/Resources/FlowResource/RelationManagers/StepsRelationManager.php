@@ -177,6 +177,28 @@ class StepsRelationManager extends RelationManager
                     ])
                     ->collapsible()
                     ->collapsed(false),
+                Section::make('Step goal')
+                    ->icon('heroicon-m-flag')
+                    ->description('When set, the AI keeps the conversation in this step until the goal is achieved (e.g. collect name and email), then optionally moves to another step.')
+                    ->schema([
+                        Textarea::make('goal')
+                            ->label('Goal')
+                            ->placeholder('e.g. Collect the customer\'s name and email and save them to context. The AI will keep the conversation in this step until the goal is achieved.')
+                            ->rows(3)
+                            ->columnSpanFull()
+                            ->helperText('The AI will ask for missing information turn by turn until the goal is satisfied. Use context variables above to define what to collect.')
+                            ->hintIcon('heroicon-m-information-circle', tooltip: 'Describe what must be achieved before leaving this step. The bot will ask for name, then email, etc., and save values to context.'),
+                        Select::make('next_step_id_when_goal_achieved')
+                            ->label('When goal achieved, go to step')
+                            ->options($stepOptions)
+                            ->nullable()
+                            ->searchable()
+                            ->helperText('Optional. If set, the conversation will move to this step when the goal is achieved.')
+                            ->hintIcon('heroicon-m-information-circle', tooltip: 'Leave empty to stay on this step after the goal is achieved (e.g. show options or a confirmation message).'),
+                    ])
+                    ->columns(1)
+                    ->collapsible()
+                    ->collapsed(false),
                 Section::make('Next steps')
                     ->icon('heroicon-m-information-circle')
                     ->description('Which steps the conversation can move to from this step. Leave empty to allow any step in the flow.')
@@ -443,6 +465,9 @@ class StepsRelationManager extends RelationManager
             ])
             ->columns([
                 TextColumn::make('key'),
+                TextColumn::make('goal')
+                    ->label('Has goal')
+                    ->formatStateUsing(fn ($state): string => $state && trim((string) $state) !== '' ? 'Yes' : '—'),
                 TextColumn::make('bot_message_template')->limit(40),
                 TextColumn::make('allowed_next_step_ids')
                     ->label('Allowed next steps')

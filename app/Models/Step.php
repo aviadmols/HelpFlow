@@ -20,7 +20,7 @@ class Step extends Model
         'flow_id', 'key', 'sort_order', 'bot_message_template',
         'router_prompt', 'system_prompt', 'tone', 'tone_instructions',
         'allowed_block_ids', 'transition_rules', 'allowed_next_step_ids', 'fallback_block_id', 'order_lookup_endpoint_id', 'ai_model_override',
-        'context_variables',
+        'context_variables', 'goal', 'next_step_id_when_goal_achieved',
     ];
 
     protected function casts(): array
@@ -49,6 +49,12 @@ class Step extends Model
     public function orderLookupEndpoint(): BelongsTo
     {
         return $this->belongsTo(Endpoint::class, 'order_lookup_endpoint_id');
+    }
+
+    /** Optional step to transition to when this step's goal is achieved. */
+    public function goalAchievedNextStep(): BelongsTo
+    {
+        return $this->belongsTo(Step::class, 'next_step_id_when_goal_achieved');
     }
 
     /** Step-level suggestions (options) for this step. When present, these are shown instead of block options. */
