@@ -50,7 +50,9 @@ final class StepGoalHandler
         $content = $response['content'] ?? null;
 
         $parsed = $this->parseResponse($content);
-        $variables = $parsed['variables'];
+        $requiredKeys = $this->getContextVariableKeysForStep($step);
+        // Only accept variables for keys defined on the step (exact key match)
+        $variables = $this->filterVariablesToStepKeys($parsed['variables'], $requiredKeys);
         $botMessage = $parsed['bot_message'];
         $goalAchieved = $parsed['goal_achieved'];
 
@@ -62,7 +64,6 @@ final class StepGoalHandler
             }
         }
 
-        $requiredKeys = $this->getContextVariableKeysForStep($step);
         if ($requiredKeys !== [] && $this->allRequiredKeysFilled($updatedContext, $requiredKeys)) {
             $goalAchieved = true;
         }
@@ -76,7 +77,7 @@ final class StepGoalHandler
 
     private function buildSystemPrompt(Step $step): string
     {
-        $base = 'You are a helpful support assistant in a chat. Your task is to work toward a single step goal: collect the required information from the user through natural conversation. Reply in English. Output only valid JSON.';
+        $base = 'You are a helpful support assistant in a chat. Your task is to collect the required information from the user step by step. You MUST: (1) Extract from the user message any values that match the context variable keys (e.g. if the user says "Aviad" or "John", set the name variable; if they give an email, set the email variable). (2) In bot_message, ask ONLY for the NEXT piece of information that is still missing—never ask again for something already in "Current conversation context". (3) Use exactly the keys provided for the variables object. Reply in English. Output only valid JSON.';
         $toneDescription = ChatConstants::toneDescriptionForPrompt($step->tone, $step->tone_instructions);
         if ($toneDescription !== null && Str::length(trim($toneDescription)) > 0) {
             $base .= "\n\nTone: " . trim($toneDescription) . ' Apply this tone to your bot_message.';
@@ -101,6 +102,16 @@ final class StepGoalHandler
         }
         $parts[] = '';
         $parts[] = "Current conversation context (already collected): " . (empty($currentContext) ? 'none' : json_encode($currentContext));
+        if ($contextVarSpec !== []) {
+            $stillNeeded = [];
+            foreach (array_keys($contextVarSpec) as $key) {
+                $val = $currentContext[$key] ?? null;
+                if ($val === null || (is_string($val) && trim($val) === '')) {
+                    $stillNeeded[] = $key;
+                }
+            }
+            $parts[] = "Still needed (ask for these only): " . (empty($stillNeeded) ? 'none' : implode(', ', $stillNeeded));
+        }
         $parts[] = '';
 
         if ($recentMessages !== []) {
@@ -114,9 +125,9 @@ final class StepGoalHandler
         $parts[] = "Latest user message: " . $userMessageText;
         $parts[] = '';
         $parts[] = "Respond with a single JSON object with exactly these keys:";
-        $parts[] = '  - variables: object with the keys listed above; set each to the value extracted from the user message (or empty string if not provided). Only include keys you can extract from this message.';
-        $parts[] = '  - bot_message: one short reply from the bot (e.g. ask for the next missing piece, thank the user, or confirm that you have what you need). Do NOT repeat or paraphrase the user; ask for the next needed info or confirm.';
-        $parts[] = '  - goal_achieved: boolean. Set to true only when the step goal is fully satisfied (e.g. all required context variables are now filled). Otherwise false.';
+        $parts[] = '  - variables: object using ONLY the context variable keys listed above. Set each key to the value extracted from the latest user message (e.g. if user says "Aviad", set name to "Aviad"; if user says an email, set email). Use empty string only for keys not provided in this message.';
+        $parts[] = '  - bot_message: one short reply. If something is still missing from context, ask for the NEXT missing item only (e.g. if name is already in context, ask for email). Never ask again for data already in "Current conversation context".';
+        $parts[] = '  - goal_achieved: true only when every context variable is now filled; otherwise false.';
 
         return implode("\n", $parts);
     }
@@ -210,6 +221,31 @@ final class StepGoalHandler
             'bot_message' => $botMessage,
             'goal_achieved' => $goalAchieved,
         ];
+    }
+
+    /**
+     * Keep only variables whose keys are in the step's context_variables. Matches keys case-insensitively so "Name" is accepted when step has "name".
+     *
+     * @param array<int, string> $allowedKeys
+     * @return array<string, mixed>
+     */
+    private function filterVariablesToStepKeys(array $variables, array $allowedKeys): array
+    {
+        if ($allowedKeys === []) {
+            return $variables;
+        }
+        $canonicalByLower = [];
+        foreach ($allowedKeys as $key) {
+            $canonicalByLower[strtolower((string) $key)] = $key;
+        }
+        $filtered = [];
+        foreach ($variables as $k => $v) {
+            $canonical = is_string($k) ? ($canonicalByLower[strtolower($k)] ?? null) : null;
+            if ($canonical !== null) {
+                $filtered[$canonical] = $v;
+            }
+        }
+        return $filtered;
     }
 
     /**
