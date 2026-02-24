@@ -21,6 +21,7 @@ use Filament\Forms\Get;
 use Filament\Infolists\Infolist;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Tables\Actions\Action;
 use Filament\Tables\Actions\CreateAction;
 use Filament\Tables\Actions\DeleteAction;
 use Filament\Tables\Actions\EditAction;
@@ -122,11 +123,35 @@ class StepsRelationManager extends RelationManager
                     ->content(new HtmlString(
                         '<button type="button" wire:click="suggestBotMessageWithAi" class="inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600">Suggest bot message with AI</button>'
                     )),
-                Section::make('Session variables (saved to conversation context)')
+                Section::make('Tone of speech')
+                    ->icon('heroicon-m-chat-bubble-left-right')
+                    ->description('Set the tone for the AI router and bot messages in this step. The tone is injected into the system prompt so replies stay consistent.')
+                    ->schema([
+                        Select::make('tone')
+                            ->label('Tone')
+                            ->options(ChatConstants::toneOptions())
+                            ->nullable()
+                            ->live()
+                            ->helperText('Affects the router system prompt and how the bot phrases customer_message.')
+                            ->hintIcon('heroicon-m-information-circle', tooltip: 'Choose a tone for this step. Custom allows free-form instructions below.'),
+                        Textarea::make('tone_instructions')
+                            ->label('Custom tone instructions')
+                            ->placeholder('e.g. Be brief and use simple words. Avoid jargon.')
+                            ->rows(2)
+                            ->visible(fn (Get $get) => $get('tone') === ChatConstants::TONE_CUSTOM)
+                            ->nullable()
+                            ->helperText('Only used when Tone is "Custom".')
+                            ->hintIcon('heroicon-m-information-circle', tooltip: 'Describe how the bot should sound in this step.'),
+                    ])
+                    ->columns(1)
+                    ->collapsible()
+                    ->collapsed(false),
+                Section::make('Values this step uses (session variables)')
                     ->icon('heroicon-m-information-circle')
-                    ->description('Define which values this step will save as global session variables. The AI router will extract them from the user message; they are stored in the conversation context and available in later steps in message templates as {{ key }} (e.g. {{ email }}, {{ order_number }}) and in payload mapping as context.key.')
+                    ->description('Define which values this step collects from the customer (via the AI) and saves to the conversation context. These are then available in later steps and in templates as {{ key }} (e.g. {{ email }}, {{ order_number }}).')
                     ->schema([
                         Repeater::make('context_variables')
+                            ->helperText('These keys are sent to the AI Router so it can extract them from the user message. Use them in bot_message_template and in payload mapping as context.key.')
                             ->hintIcon('heroicon-m-information-circle', tooltip: 'Add variable keys this step should collect and save. Use snake_case (e.g. email, order_number, customer_name). In later steps and in templates you reference them as context.email, context.order_number.')
                             ->schema([
                                 TextInput::make('key')
@@ -291,6 +316,66 @@ class StepsRelationManager extends RelationManager
                     ->visible(fn () => (bool) $this->getMountedTableActionRecord()?->getKey())
                     ->collapsible()
                     ->collapsed(false),
+                Section::make('Step endpoint (order lookup)')
+                    ->icon('heroicon-m-arrow-path')
+                    ->description('Optional endpoint to call after the user provides data in this step (e.g. email/order number). The request is built from context/customer; the response is merged into context.')
+                    ->schema([
+                        Select::make('order_lookup_endpoint_id')
+                            ->label('Endpoint')
+                            ->options(Endpoint::query()->pluck('name', 'id')->all())
+                            ->searchable()
+                            ->nullable()
+                            ->live()
+                            ->helperText('After extracting data from the user message, this endpoint is called. Request and response mapping are defined on the Endpoint.')
+                            ->hintIcon('heroicon-m-information-circle', tooltip: 'Optional. After the user provides email/order number, call this endpoint and add the response to context.'),
+                        Placeholder::make('endpoint_what_we_send')
+                            ->label('What we send')
+                            ->content(function (Get $get): HtmlString {
+                                $id = $get('order_lookup_endpoint_id');
+                                if (! $id) {
+                                    return new HtmlString('<p class="text-sm text-gray-500 dark:text-gray-400">Select an endpoint above. Request body is built from conversation context and customer using the Endpoint\'s request_mapper.</p>');
+                                }
+                                $endpoint = Endpoint::find($id);
+                                if (! $endpoint || ! is_array($endpoint->request_mapper) || $endpoint->request_mapper === []) {
+                                    return new HtmlString('<p class="text-sm text-gray-500 dark:text-gray-400">No request_mapper defined on this endpoint. Edit the endpoint to set which context/customer fields are sent.</p>');
+                                }
+                                $lines = array_map(fn ($k, $v) => '<code>' . e((string) $k) . '</code> ← ' . e((string) $v), array_keys($endpoint->request_mapper), $endpoint->request_mapper);
+
+                                return new HtmlString('<p class="text-sm text-gray-600 dark:text-gray-300">Built from context/customer per request_mapper:</p><ul class="list-disc list-inside text-sm mt-1">' . implode('', array_map(fn ($line) => '<li>' . $line . '</li>', $lines)) . '</ul>');
+                            })
+                            ->visible(fn (Get $get) => (bool) $get('order_lookup_endpoint_id')),
+                        Placeholder::make('endpoint_what_we_receive')
+                            ->label('What we receive')
+                            ->content(function (Get $get): HtmlString {
+                                $id = $get('order_lookup_endpoint_id');
+                                if (! $id) {
+                                    return new HtmlString('<p class="text-sm text-gray-500 dark:text-gray-400">Variables extracted from the API response (via response_mapper) are merged into the conversation context for use in templates and later steps.</p>');
+                                }
+                                $endpoint = Endpoint::find($id);
+                                if (! $endpoint || ! is_array($endpoint->response_mapper) || $endpoint->response_mapper === []) {
+                                    return new HtmlString('<p class="text-sm text-gray-500 dark:text-gray-400">No response_mapper defined. Edit the endpoint to set how the API response is mapped into context variables.</p>');
+                                }
+                                $lines = array_map(fn ($k, $v) => '<code>' . e((string) $k) . '</code> ← ' . e(is_array($v) ? json_encode($v) : (string) $v), array_keys($endpoint->response_mapper), $endpoint->response_mapper);
+
+                                return new HtmlString('<p class="text-sm text-gray-600 dark:text-gray-300">Mapped into context from response_mapper:</p><ul class="list-disc list-inside text-sm mt-1">' . implode('', array_map(fn ($line) => '<li>' . $line . '</li>', $lines)) . '</ul>');
+                            })
+                            ->visible(fn (Get $get) => (bool) $get('order_lookup_endpoint_id')),
+                        Placeholder::make('endpoint_edit_link')
+                            ->label('')
+                            ->content(function (Get $get): HtmlString {
+                                $id = $get('order_lookup_endpoint_id');
+                                if (! $id) {
+                                    return new HtmlString('');
+                                }
+                                $url = \App\Filament\Resources\EndpointResource::getUrl('edit', ['record' => $id]);
+
+                                return new HtmlString('<a href="' . e($url) . '" target="_blank" class="text-primary-600 hover:underline dark:text-primary-400 text-sm">Edit endpoint</a>');
+                            })
+                            ->visible(fn (Get $get) => (bool) $get('order_lookup_endpoint_id')),
+                    ])
+                    ->columns(1)
+                    ->collapsible()
+                    ->collapsed(false),
                 Section::make('Blocks & fallback')
                     ->icon('heroicon-m-information-circle')
                     ->description('Blocks the customer can be directed to in this step. If the AI does not recognize the intent, the fallback block is shown.')
@@ -309,13 +394,6 @@ class StepsRelationManager extends RelationManager
                             ->nullable()
                             ->helperText('Block to show when confidence is low or intent is unclear.')
                             ->hintIcon('heroicon-m-information-circle', tooltip: 'When the AI is unsure or the intent is unclear, this block is shown (e.g. "Sorry, I didn\'t understand. Here are some options.").'),
-                        Select::make('order_lookup_endpoint_id')
-                            ->label('Order lookup endpoint (optional)')
-                            ->options(Endpoint::query()->pluck('name', 'id')->all())
-                            ->searchable()
-                            ->nullable()
-                            ->helperText('For collect steps: after extracting email/order_number from the user message, call this endpoint and merge the response into context.')
-                            ->hintIcon('heroicon-m-information-circle', tooltip: 'Optional. After the user provides email/order number, call this endpoint and add the response to context for the rest of the conversation.'),
                     ])
                     ->columns(1),
                 Section::make('AI routing (this step)')
@@ -355,6 +433,11 @@ class StepsRelationManager extends RelationManager
                 CreateAction::make()->label('New step'),
             ])
             ->actions([
+                Action::make('review')
+                    ->label('Review')
+                    ->icon('heroicon-m-chat-bubble-left-right')
+                    ->url(fn (\App\Models\Step $record): string => \App\Filament\Resources\FlowResource::getUrl('step-review', ['record' => $this->getOwnerRecord()]) . '?step_id=' . $record->id)
+                    ->tooltip('Open a chat that starts at this step to test tone, values, endpoint and transitions.'),
                 EditAction::make()->label('Edit'),
                 DeleteAction::make()->label('Delete'),
             ])

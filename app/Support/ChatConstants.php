@@ -86,6 +86,19 @@ final class ChatConstants
 
     public const STEP_KEY_HANDOFF_OFFER = 'handoff_offer';
 
+    // Step tone of speech (for AI router and bot messages)
+    public const TONE_FRIENDLY = 'friendly';
+
+    public const TONE_FORMAL = 'formal';
+
+    public const TONE_CONCISE = 'concise';
+
+    public const TONE_EMPATHETIC = 'empathetic';
+
+    public const TONE_PROFESSIONAL = 'professional';
+
+    public const TONE_CUSTOM = 'custom';
+
     // Input types for orchestrator
     public const INPUT_TYPE_TEXT = 'text';
 
@@ -93,6 +106,39 @@ final class ChatConstants
 
     // Router fallback
     public const ROUTER_FALLBACK_REASON = 'fallback';
+
+    /** @return array<string, string> Tone key => label for UI */
+    public static function toneOptions(): array
+    {
+        return [
+            self::TONE_FRIENDLY => 'Friendly',
+            self::TONE_FORMAL => 'Formal',
+            self::TONE_CONCISE => 'Concise',
+            self::TONE_EMPATHETIC => 'Empathetic',
+            self::TONE_PROFESSIONAL => 'Professional',
+            self::TONE_CUSTOM => 'Custom (use instructions below)',
+        ];
+    }
+
+    /** Human-readable tone description for AI prompt. Returns null if no tone set. */
+    public static function toneDescriptionForPrompt(?string $tone, ?string $toneInstructions): ?string
+    {
+        if ($tone === null || $tone === '') {
+            return null;
+        }
+        if ($tone === self::TONE_CUSTOM && $toneInstructions !== null && trim($toneInstructions) !== '') {
+            return trim($toneInstructions);
+        }
+        $descriptions = [
+            self::TONE_FRIENDLY => 'Friendly and warm; use casual, approachable language.',
+            self::TONE_FORMAL => 'Formal and polite; use professional, respectful language.',
+            self::TONE_CONCISE => 'Concise and to the point; keep replies short and clear.',
+            self::TONE_EMPATHETIC => 'Empathetic and understanding; acknowledge feelings and show care.',
+            self::TONE_PROFESSIONAL => 'Professional and neutral; clear and business-appropriate.',
+        ];
+
+        return $descriptions[$tone] ?? null;
+    }
 
     /** @return array<string> */
     public static function actionTypes(): array

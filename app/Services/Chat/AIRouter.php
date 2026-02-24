@@ -10,6 +10,7 @@ use App\Models\Message;
 use App\Models\Step;
 use App\Services\OpenRouter\OpenRouterClient;
 use App\Support\ChatConstants;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -43,6 +44,10 @@ final class AIRouter
         }
 
         $systemPrompt = $step?->system_prompt ?? $flow->system_prompt ?? config('chat.default_system_prompt', 'You are a support chat router. Output only valid JSON.');
+        $toneDescription = ChatConstants::toneDescriptionForPrompt($step?->tone, $step?->tone_instructions);
+        if ($toneDescription !== null && Str::length(trim($toneDescription)) > 0) {
+            $systemPrompt .= "\n\nTone: " . trim($toneDescription) . " Apply this tone to the customer_message and any phrasing in your response.";
+        }
         $routerPrompt = $step?->router_prompt ?? $flow->router_prompt ?? config('chat.default_router_prompt', 'Given the user message, respond with JSON: intent, target_block_key, target_step_key, confidence (0-1), reason, customer_message, require_confirmation, variables (object). customer_message must NOT repeat the user.');
 
         $allowedBlockKeys = [];

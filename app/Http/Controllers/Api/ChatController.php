@@ -28,6 +28,7 @@ class ChatController extends Controller
      * Start a new conversation. Creates customer if needed, creates conversation, returns initial block.
      *
      * Body: customer_id (optional, existing), or email/name for new customer. flow_key (optional).
+     * step_key (optional): start at this step (must belong to the flow). step_id (optional): same by id.
      */
     public function start(Request $request): JsonResponse
     {
@@ -36,6 +37,8 @@ class ChatController extends Controller
             'email' => 'nullable|email',
             'name' => 'nullable|string|max:255',
             'flow_key' => 'nullable|string|max:64',
+            'step_key' => 'nullable|string|max:64',
+            'step_id' => 'nullable|integer',
         ]);
 
         $tenantId = $request->input('tenant_id');
@@ -65,12 +68,30 @@ class ChatController extends Controller
             return response()->json(['error' => 'No active flow found.'], 422);
         }
 
-        $firstStep = $flow->steps()->orderBy('id')->first();
+        $startStep = null;
+        if ($request->filled('step_key') || $request->filled('step_id')) {
+            $stepQuery = $flow->steps();
+            if ($request->filled('step_key')) {
+                $stepQuery->where('key', $request->input('step_key'));
+            } else {
+                $stepQuery->where('id', (int) $request->input('step_id'));
+            }
+            $startStep = $stepQuery->first();
+            if (! $startStep) {
+                return response()->json([
+                    'error' => 'Step not found in this flow. Use step_key or step_id that belongs to the selected flow.',
+                ], 422);
+            }
+        }
+        if (! $startStep) {
+            $startStep = $flow->steps()->orderBy('sort_order')->orderBy('id')->first();
+        }
+
         $conversation = Conversation::create([
             'tenant_id' => $tenantId,
             'customer_id' => $customer->id,
             'flow_id' => $flow->id,
-            'current_step_id' => $firstStep?->id,
+            'current_step_id' => $startStep?->id,
             'status' => 'active',
         ]);
 

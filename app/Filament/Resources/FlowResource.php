@@ -59,6 +59,7 @@ class FlowResource extends Resource
             'index' => \App\Filament\Resources\FlowResource\Pages\ListFlows::route('/'),
             'create' => \App\Filament\Resources\FlowResource\Pages\CreateFlow::route('/create'),
             'edit' => \App\Filament\Resources\FlowResource\Pages\EditFlow::route('/{record}/edit'),
+            'step-review' => \App\Filament\Resources\FlowResource\Pages\StepReviewPage::route('/{record}/step-review'),
         ];
     }
 }

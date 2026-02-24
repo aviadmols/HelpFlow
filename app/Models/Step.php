@@ -18,7 +18,7 @@ class Step extends Model
 
     protected $fillable = [
         'flow_id', 'key', 'sort_order', 'bot_message_template',
-        'router_prompt', 'system_prompt',
+        'router_prompt', 'system_prompt', 'tone', 'tone_instructions',
         'allowed_block_ids', 'transition_rules', 'allowed_next_step_ids', 'fallback_block_id', 'order_lookup_endpoint_id', 'ai_model_override',
         'context_variables',
     ];
