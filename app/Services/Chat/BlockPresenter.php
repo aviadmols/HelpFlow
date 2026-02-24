@@ -36,6 +36,11 @@ final class BlockPresenter
                     $step->bot_message_template ?? '',
                     $context
                 );
+                if (trim((string) $botMessage) === '') {
+                    $fallbackBlock = $this->resolveBlockForConversation($conversation);
+                    $fallbackTemplate = $fallbackBlock->message_template ?? $fallbackBlock->title ?? 'What would you like to do?';
+                    $botMessage = $this->renderer->render($fallbackTemplate, $context);
+                }
                 $options = [];
                 foreach ($step->stepOptions as $opt) {
                     $options[] = [
@@ -46,7 +51,7 @@ final class BlockPresenter
                     ];
                 }
                 return [
-                    'bot_message' => $botMessage,
+                    'bot_message' => trim((string) $botMessage) !== '' ? $botMessage : 'Step: ' . $step->key,
                     'block_key' => $step->key,
                     'options' => $options,
                 ];

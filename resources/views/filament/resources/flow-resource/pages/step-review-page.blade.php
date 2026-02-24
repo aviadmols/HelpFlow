@@ -3,6 +3,8 @@
         $flowKey = $this->getFlowKey();
         $flowName = $this->getFlowName();
         $stepKey = $this->getStepKey();
+        $stepToneLabel = $this->getStepToneLabel();
+        $stepEndpointName = $this->getStepEndpointName();
     @endphp
     <div
         x-data="{
@@ -109,6 +111,7 @@
                 }
             }
         }"
+        x-init="$nextTick(() => startConversation())"
         class="space-y-6"
     >
         <div class="rounded-lg bg-white dark:bg-gray-800 p-4 shadow">
@@ -116,13 +119,23 @@
             <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
                 Flow: {{ $flowName }} ({{ $flowKey }}). The conversation will start at this step so you can test tone, values, endpoint and transitions.
             </p>
+            <dl class="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-400 mb-3">
+                <dt class="font-medium">Step</dt>
+                <dd>{{ $stepKey }}</dd>
+                <dt class="font-medium">Flow</dt>
+                <dd>{{ $flowName }} ({{ $flowKey }})</dd>
+                <dt class="font-medium">Tone</dt>
+                <dd>{{ $stepToneLabel }}</dd>
+                <dt class="font-medium">Endpoint</dt>
+                <dd>{{ $stepEndpointName }}</dd>
+            </dl>
             <button
                 type="button"
                 @click="startConversation()"
                 :disabled="loading"
                 class="filament-button filament-button-size-sm inline-flex items-center justify-center rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none filament-page-button-primary bg-primary-600 hover:bg-primary-500 focus:ring-primary-500 text-white shadow px-4 py-2 text-sm disabled:opacity-70"
             >
-                <span x-text="loading ? 'Starting…' : 'Start review'"></span>
+                <span x-text="loading ? 'Starting…' : (conversationId ? 'Restart review' : 'Start review')"></span>
             </button>
         </div>
 
@@ -151,6 +164,9 @@
                         x-ref="messagesContainer"
                         class="flex flex-col p-4 space-y-3 min-h-[240px] max-h-[400px] overflow-y-auto"
                     >
+                        <template x-if="conversationId && messages.length === 0">
+                            <p class="text-sm text-gray-500 dark:text-gray-400 italic">Step loaded. Send a message or choose an option below.</p>
+                        </template>
                         <template x-for="(msg, i) in messages" :key="i">
                             <div
                                 :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'"

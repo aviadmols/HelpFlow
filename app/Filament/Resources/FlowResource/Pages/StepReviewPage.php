@@ -6,6 +6,7 @@ namespace App\Filament\Resources\FlowResource\Pages;
 
 use App\Filament\Resources\FlowResource;
 use App\Models\Step;
+use App\Support\ChatConstants;
 use Filament\Resources\Pages\Page;
 use Filament\Resources\Pages\Concerns\InteractsWithRecord;
 use Illuminate\Contracts\Support\Htmlable;
@@ -37,7 +38,7 @@ class StepReviewPage extends Page
         } else {
             $query->where('key', $stepKey);
         }
-        $this->step = $query->first();
+        $this->step = $query->with('orderLookupEndpoint')->first();
         if (! $this->step) {
             $this->redirect(FlowResource::getUrl('edit', ['record' => $this->record]));
 
@@ -79,5 +80,32 @@ class StepReviewPage extends Page
     public function getFlowName(): string
     {
         return (string) ($this->getRecord()->name ?? '');
+    }
+
+    /**
+     * Step tone label for display (e.g. "Friendly", "Formal").
+     */
+    public function getStepToneLabel(): string
+    {
+        $tone = $this->step?->tone;
+        if ($tone === null || $tone === '') {
+            return '—';
+        }
+        $options = ChatConstants::toneOptions();
+
+        return (string) ($options[$tone] ?? $tone);
+    }
+
+    /**
+     * Step endpoint name for display (order lookup).
+     */
+    public function getStepEndpointName(): string
+    {
+        $endpoint = $this->step?->orderLookupEndpoint;
+        if (! $endpoint) {
+            return '—';
+        }
+
+        return (string) ($endpoint->name ?? $endpoint->key ?? '—');
     }
 }
